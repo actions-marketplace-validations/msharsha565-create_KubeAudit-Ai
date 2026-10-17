@@ -24,3 +24,7 @@ securityContext:
   runAsGroup: 10001
   readOnlyRootFilesystem: true
   allowPrivilegeEscalation: false
+
+webhook:
+  failurePolicy: Fail
+  caBundle: ""
