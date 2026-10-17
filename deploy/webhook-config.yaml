@@ -1,0 +1,28 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: kubeaudit-validating-webhook
+webhooks:
+  - name: kubeaudit.local.validator
+    rules:
+      - apiGroups: ["", "apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods", "deployments", "statefulsets", "daemonsets"]
+        scope: "Namespaced"
+    clientConfig:
+      service:
+        name: kubeaudit-service
+        namespace: kubeaudit
+        path: "/validate"
+        port: 443
+      caBundle: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUREekNDQWZlZ0F3SUJBZ0lVUkJRa2NsRUlacFl6RXVVRldlU21Sb1BJNmFvd0RRWUpLb1pJaHZjTkFRRUwKQlFBd0Z6RVZNQk1HQTFVRUF3d01TM1ZpWlVGMVpHbDBMVU5CTUI0WERUSTJNVEF4TnpBM01URXpPVm9YRFRJMwpNVEF4TnpBM01URXpPVm93RnpFVk1CTUdBMVVFQXd3TVMzVmlaVUYxWkdsMExVTkJNSUlCSWpBTkJna3Foa2lHCjl3MEJBUUVGQUFPQ0FROEFNSUlCQ2dLQ0FRRUF2K0JQVkZrZUtKSWhTTmVEQk0xejNvWDhZN0IydUU2UHp0ZnQKdmpSV3JRN1N4cVNTMlR1c1JCS3c4R3Q3NlkyVXVuTVlGNzkrN2R4QVpXS0w2Z1ZNTEk5MFdIeTkveVoxbmU4Ywp4SzA5dzVjdGxMS3E2U0p4NmM0N2gxOFYvcC9ySmRqUUZ4OCtic0VlM3Z3VENXUkV1STdTU3Zubm1EWi8rcjhTCkFCVGozU1duUHFLNHFUQlZWWVdKUzlLV0JZVEErTFI3NTZXNmhRczZOR3cySkdYaWtqZHFEV0hteDV5SjhXQVQKV3E2VVRkQlduWlMwYmwzNFYyZHJnQkJybHF0eFJFTGxVWklMcnphS2NldWZTdDdGbDI2NElDWXBvS28vKzhBTwpweTJrRTA3Uk1QbTM5ak1NYkZMdHp1YmltNHRTZGFVdStmZnhQTFdNeVdNWXhYQW9Id0lEQVFBQm8xTXdVVEFkCkJnTlZIUTRFRmdRVTNxVkNjeXVYQ1JUaVZZcm5ISXRHK09MMkY2b3dId1lEVlIwakJCZ3dGb0FVM3FWQ2N5dVgKQ1JUaVZZcm5ISXRHK09MMkY2b3dEd1lEVlIwVEFRSC9CQVV3QXdFQi96QU5CZ2txaGtpRzl3MEJBUXNGQUFPQwpBUUVBRThYVXM5OFZzZnZsUGRKcnpsTTdWU2FsNkR1elI2WWx0NEF3WU96MkNvWUR5OVkxTTdSWTBJcXdVS0dTCnVVMXJld0lwOWE1R1N5SUE0N3BZNHVjQkd1Y0F1OFNJdzlvdlVKeWh1cDVpdjJlY2ZyamMvTGw0MjhhaUM1d28KWlVDYXQwWHc5VUp1N1lCcGsyOTFWQy90c2lEUDAzQXd4NHJHTi9TRzhvcXh4YXNnZ1pKUkg1RldjaWU4ZEh0MApYY3grTkFQbGQ1M3BoK3I2K2tLU2tyZkllUHRrSjZ1YkJRd2pYVWUzUnM5YjRLaHZEeW1xdmh6YjN0UUYrSmVqCktLejM0Sm9SQkM4SnJvR2FrYkdOeU9LaW9QdExCSDJJQjB1bVlrVDZOSUkwakdITmZVYXAyOEtjZXgrUjUxZlUKSmpvTGdyalBSVitZMkJ0ZUwyalg0KytSNUE9PQotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCg==
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    timeoutSeconds: 5
+    failurePolicy: Fail
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values: ["kube-system", "kubeaudit"]

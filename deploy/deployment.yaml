@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kubeaudit
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubeaudit-deployment
+  namespace: kubeaudit
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kubeaudit
+  template:
+    metadata:
+      labels:
+        app: kubeaudit
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+      containers:
+        - name: kubeaudit
+          image: kubeaudit-ai:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - "uvicorn"
+            - "app.main:app"
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "8443"
+            - "--ssl-keyfile"
+            - "/etc/certs/tls.key"
+            - "--ssl-certfile"
+            - "/etc/certs/tls.crt"
+          ports:
+            - containerPort: 8443
+          volumeMounts:
+            - name: tls-certs
+              mountPath: "/etc/certs"
+              readOnly: true
+          resources:
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+      volumes:
+        - name: tls-certs
+          secret:
+            secretName: kubeaudit-tls
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubeaudit-service
+  namespace: kubeaudit
+spec:
+  ports:
+    - port: 443
+      targetPort: 8443
+  selector:
+    app: kubeaudit
