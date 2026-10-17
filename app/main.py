@@ -126,7 +126,15 @@ def analyze_manifest(doc: Dict[str, Any]) -> List[Issue]:
 def patch_container(container: Dict[str, Any], fixes: List[str]):
     c_name = container.get("name", "unnamed")
     
-    # Enforce safe security context
+    # 1. Image tag remediation
+    image = container.get("image", "")
+    if ":" not in image or image.endswith(":latest"):
+        base_image = image.split(":")[0] if ":" in image else image
+        fallback_image = f"{base_image}:1.0.0"
+        container["image"] = fallback_image
+        fixes.append(f"Pinned image for container '{c_name}' from '{image}' to '{fallback_image}'")
+
+    # 2. Security context remediation
     sec_ctx = container.setdefault("securityContext", {})
     if sec_ctx.get("privileged", False):
         sec_ctx["privileged"] = False
@@ -138,6 +146,23 @@ def patch_container(container: Dict[str, Any], fixes: List[str]):
         sec_ctx["allowPrivilegeEscalation"] = False
         fixes.append(f"Disabled allowPrivilegeEscalation on container '{c_name}'")
 
+    # 3. Resource limits & requests remediation
+    resources = container.setdefault("resources", {})
+    limits = resources.setdefault("limits", {})
+    requests = resources.setdefault("requests", {})
+
+    if not limits.get("cpu"):
+        limits["cpu"] = "500m"
+        fixes.append(f"Added default CPU limit (500m) on container '{c_name}'")
+    if not limits.get("memory"):
+        limits["memory"] = "512Mi"
+        fixes.append(f"Added default Memory limit (512Mi) on container '{c_name}'")
+    if not requests.get("cpu"):
+        requests["cpu"] = "100m"
+        fixes.append(f"Added default CPU request (100m) on container '{c_name}'")
+    if not requests.get("memory"):
+        requests["memory"] = "128Mi"
+        fixes.append(f"Added default Memory request (128Mi) on container '{c_name}'")
     # Enforce default resource limits and requests
     resources = container.setdefault("resources", {})
     limits = resources.setdefault("limits", {})
