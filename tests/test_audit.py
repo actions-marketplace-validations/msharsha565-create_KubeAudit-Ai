@@ -86,3 +86,68 @@ spec:
     audit_data = audit_response.json()
     assert audit_data["valid"] is True
     assert len(audit_data["issues"]) == 0
+def test_validate_admission_allowed():
+    admission_review_payload = {
+        "apiVersion": "admission.k8s.io/v1",
+        "kind": "AdmissionReview",
+        "request": {
+            "uid": "705ab4f5-6393-11e8-b7cc-42010a800002",
+            "object": {
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "metadata": {
+                    "name": "secure-pod",
+                    "namespace": "production"
+                },
+                "spec": {
+                    "securityContext": {
+                        "runAsNonRoot": True
+                    },
+                    "containers": [{
+                        "name": "web",
+                        "image": "nginx:1.25.0",
+                        "resources": {
+                            "limits": {"cpu": "500m", "memory": "512Mi"},
+                            "requests": {"cpu": "100m", "memory": "128Mi"}
+                        },
+                        "securityContext": {
+                            "privileged": False,
+                            "readOnlyRootFilesystem": True,
+                            "allowPrivilegeEscalation": False
+                        }
+                    }]
+                }
+            }
+        }
+    }
+    response = client.post("/validate", json=admission_review_payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["response"]["allowed"] is True
+    assert data["response"]["uid"] == "705ab4f5-6393-11e8-b7cc-42010a800002"
+
+def test_validate_admission_denied_on_high_severity():
+    insecure_payload = {
+        "apiVersion": "admission.k8s.io/v1",
+        "kind": "AdmissionReview",
+        "request": {
+            "uid": "test-uid-123",
+            "object": {
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "metadata": {"name": "insecure-pod", "namespace": "default"},
+                "spec": {
+                    "containers": [{
+                        "name": "root-box",
+                        "image": "busybox:latest",
+                        "securityContext": {"privileged": True}
+                    }]
+                }
+            }
+        }
+    }
+    response = client.post("/validate", json=insecure_payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["response"]["allowed"] is False
+    assert "PrivilegedContainer" in data["response"]["status"]["message"]

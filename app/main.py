@@ -1,5 +1,6 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import RedirectResponse
+import base64
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import RedirectResponse, JSONResponse
 from pydantic import BaseModel
 import yaml
 from typing import List, Dict, Any, Optional
@@ -126,7 +127,6 @@ def analyze_manifest(doc: Dict[str, Any]) -> List[Issue]:
 def patch_container(container: Dict[str, Any], fixes: List[str]):
     c_name = container.get("name", "unnamed")
     
-    # 1. Image tag remediation
     image = container.get("image", "")
     if ":" not in image or image.endswith(":latest"):
         base_image = image.split(":")[0] if ":" in image else image
@@ -134,7 +134,6 @@ def patch_container(container: Dict[str, Any], fixes: List[str]):
         container["image"] = fallback_image
         fixes.append(f"Pinned image for container '{c_name}' from '{image}' to '{fallback_image}'")
 
-    # 2. Security context remediation
     sec_ctx = container.setdefault("securityContext", {})
     if sec_ctx.get("privileged", False):
         sec_ctx["privileged"] = False
@@ -146,24 +145,6 @@ def patch_container(container: Dict[str, Any], fixes: List[str]):
         sec_ctx["allowPrivilegeEscalation"] = False
         fixes.append(f"Disabled allowPrivilegeEscalation on container '{c_name}'")
 
-    # 3. Resource limits & requests remediation
-    resources = container.setdefault("resources", {})
-    limits = resources.setdefault("limits", {})
-    requests = resources.setdefault("requests", {})
-
-    if not limits.get("cpu"):
-        limits["cpu"] = "500m"
-        fixes.append(f"Added default CPU limit (500m) on container '{c_name}'")
-    if not limits.get("memory"):
-        limits["memory"] = "512Mi"
-        fixes.append(f"Added default Memory limit (512Mi) on container '{c_name}'")
-    if not requests.get("cpu"):
-        requests["cpu"] = "100m"
-        fixes.append(f"Added default CPU request (100m) on container '{c_name}'")
-    if not requests.get("memory"):
-        requests["memory"] = "128Mi"
-        fixes.append(f"Added default Memory request (128Mi) on container '{c_name}'")
-    # Enforce default resource limits and requests
     resources = container.setdefault("resources", {})
     limits = resources.setdefault("limits", {})
     requests = resources.setdefault("requests", {})
@@ -248,3 +229,45 @@ def fix_manifest(payload: AuditRequest):
 
     remediated_yaml = yaml.dump_all(valid_docs, sort_keys=False)
     return FixResponse(remediated_manifest=remediated_yaml, applied_fixes=applied_fixes)
+
+@app.post("/validate")
+async def validate_admission(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON in admission request")
+
+    req = body.get("request", {})
+    uid = req.get("uid", "")
+    object_spec = req.get("object", {})
+
+    if not object_spec:
+        return JSONResponse(content={
+            "apiVersion": "admission.k8s.io/v1",
+            "kind": "AdmissionReview",
+            "response": {"uid": uid, "allowed": True}
+        })
+
+    issues = analyze_manifest(object_spec)
+    critical_or_high = [i for i in issues if i.severity in ["Critical", "High"]]
+
+    if critical_or_high:
+        rejection_reasons = "; ".join([f"{i.rule}: {i.message}" for i in critical_or_high])
+        return JSONResponse(content={
+            "apiVersion": "admission.k8s.io/v1",
+            "kind": "AdmissionReview",
+            "response": {
+                "uid": uid,
+                "allowed": False,
+                "status": {
+                    "code": 403,
+                    "message": f"KubeAudit AI policy violations: {rejection_reasons}"
+                }
+            }
+        })
+
+    return JSONResponse(content={
+        "apiVersion": "admission.k8s.io/v1",
+        "kind": "AdmissionReview",
+        "response": {"uid": uid, "allowed": True}
+    })
