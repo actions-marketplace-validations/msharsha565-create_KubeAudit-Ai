@@ -62,3 +62,27 @@ spec:
     data = response.json()
     assert data["valid"] is False
     assert any(issue.get("remediation") is not None for issue in data["issues"])
+def test_fix_endpoint_resolves_issues():
+    insecure_yaml = """
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fixable-pod
+spec:
+  containers:
+  - name: web
+    image: nginx:1.25.0
+    securityContext:
+      privileged: true
+"""
+    fix_response = client.post("/fix", json={"manifest": insecure_yaml})
+    assert fix_response.status_code == 200
+    fixed_data = fix_response.json()
+    assert len(fixed_data["applied_fixes"]) > 0
+
+    # Feed the remediated manifest back into /audit to ensure no security issues remain
+    audit_response = client.post("/audit", json={"manifest": fixed_data["remediated_manifest"]})
+    assert audit_response.status_code == 200
+    audit_data = audit_response.json()
+    assert audit_data["valid"] is True
+    assert len(audit_data["issues"]) == 0

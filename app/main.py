@@ -23,6 +23,10 @@ class AuditResponse(BaseModel):
     valid: bool
     issues: List[Issue]
 
+class FixResponse(BaseModel):
+    remediated_manifest: str
+    applied_fixes: List[str]
+
 def inspect_container_list(containers: List[Dict[str, Any]], container_type: str) -> List[Issue]:
     issues = []
     for container in containers:
@@ -34,7 +38,7 @@ def inspect_container_list(containers: List[Dict[str, Any]], container_type: str
                 severity="Medium",
                 rule="AvoidLatestTag",
                 message=f"{container_type} '{c_name}' uses the ':latest' image tag or omitted tag.",
-                remediation=f"Pin container '{c_name}' image to an immutable tag or SHA256 digest (e.g., '{image.split(':')[0]}:1.0.0')."
+                remediation=f"Pin container '{c_name}' image to an immutable tag or SHA256 digest."
             ))
 
         resources = container.get("resources", {})
@@ -71,7 +75,7 @@ def inspect_container_list(containers: List[Dict[str, Any]], container_type: str
                 severity="Medium",
                 rule="ReadOnlyRootFilesystem",
                 message=f"{container_type} '{c_name}' does not configure 'readOnlyRootFilesystem: true'.",
-                remediation="Set securityContext.readOnlyRootFilesystem: true and mount an emptyDir volume for writable temporary paths."
+                remediation="Set securityContext.readOnlyRootFilesystem: true."
             ))
 
         if c_sec_ctx.get("allowPrivilegeEscalation", True):
@@ -119,6 +123,68 @@ def analyze_manifest(doc: Dict[str, Any]) -> List[Issue]:
 
     return issues
 
+def patch_container(container: Dict[str, Any], fixes: List[str]):
+    c_name = container.get("name", "unnamed")
+    
+    # Enforce safe security context
+    sec_ctx = container.setdefault("securityContext", {})
+    if sec_ctx.get("privileged", False):
+        sec_ctx["privileged"] = False
+        fixes.append(f"Disabled privileged mode on container '{c_name}'")
+    if not sec_ctx.get("readOnlyRootFilesystem", False):
+        sec_ctx["readOnlyRootFilesystem"] = True
+        fixes.append(f"Enforced readOnlyRootFilesystem on container '{c_name}'")
+    if sec_ctx.get("allowPrivilegeEscalation", True):
+        sec_ctx["allowPrivilegeEscalation"] = False
+        fixes.append(f"Disabled allowPrivilegeEscalation on container '{c_name}'")
+
+    # Enforce default resource limits and requests
+    resources = container.setdefault("resources", {})
+    limits = resources.setdefault("limits", {})
+    requests = resources.setdefault("requests", {})
+
+    if not limits.get("cpu"):
+        limits["cpu"] = "500m"
+        fixes.append(f"Added default CPU limit (500m) on container '{c_name}'")
+    if not limits.get("memory"):
+        limits["memory"] = "512Mi"
+        fixes.append(f"Added default Memory limit (512Mi) on container '{c_name}'")
+    if not requests.get("cpu"):
+        requests["cpu"] = "100m"
+        fixes.append(f"Added default CPU request (100m) on container '{c_name}'")
+    if not requests.get("memory"):
+        requests["memory"] = "128Mi"
+        fixes.append(f"Added default Memory request (128Mi) on container '{c_name}'")
+
+def remediate_document(doc: Dict[str, Any], fixes: List[str]):
+    kind = doc.get("kind", "")
+    metadata = doc.setdefault("metadata", {})
+    spec = doc.setdefault("spec", {})
+
+    if not metadata.get("namespace") and kind not in ["Namespace", "ClusterRole", "ClusterRoleBinding"]:
+        metadata["namespace"] = "default"
+        fixes.append(f"Assigned namespace 'default' to {kind} '{metadata.get('name', 'unnamed')}'")
+
+    pod_spec = None
+    if kind in ["Deployment", "StatefulSet", "DaemonSet", "Job"]:
+        template = spec.setdefault("template", {})
+        pod_spec = template.setdefault("spec", {})
+    elif kind == "Pod":
+        pod_spec = spec
+
+    if pod_spec:
+        sec_ctx = pod_spec.setdefault("securityContext", {})
+        if not sec_ctx.get("runAsNonRoot"):
+            sec_ctx["runAsNonRoot"] = True
+            fixes.append("Enforced spec.securityContext.runAsNonRoot: true")
+
+        for c in pod_spec.get("containers", []):
+            patch_container(c, fixes)
+        for c in pod_spec.get("initContainers", []):
+            patch_container(c, fixes)
+        for c in pod_spec.get("ephemeralContainers", []):
+            patch_container(c, fixes)
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
@@ -139,3 +205,21 @@ def audit_manifest(payload: AuditRequest):
         all_issues.extend(analyze_manifest(doc))
 
     return AuditResponse(valid=(len(all_issues) == 0), issues=all_issues)
+
+@app.post("/fix", response_model=FixResponse)
+def fix_manifest(payload: AuditRequest):
+    try:
+        documents = list(yaml.safe_load_all(payload.manifest))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid YAML payload: {str(e)}")
+
+    valid_docs = [doc for doc in documents if isinstance(doc, dict)]
+    if not valid_docs:
+        raise HTTPException(status_code=400, detail="Manifest does not contain valid YAML object definitions.")
+
+    applied_fixes = []
+    for doc in valid_docs:
+        remediate_document(doc, applied_fixes)
+
+    remediated_yaml = yaml.dump_all(valid_docs, sort_keys=False)
+    return FixResponse(remediated_manifest=remediated_yaml, applied_fixes=applied_fixes)
