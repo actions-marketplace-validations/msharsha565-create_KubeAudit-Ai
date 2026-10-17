@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: demo-web
-        image: nginx:1.0.0
+        image: nginx:alpine
         securityContext:
           privileged: false
           readOnlyRootFilesystem: true

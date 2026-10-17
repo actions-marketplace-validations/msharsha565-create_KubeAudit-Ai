@@ -130,10 +130,9 @@ def patch_container(container: Dict[str, Any], fixes: List[str]):
     image = container.get("image", "")
     if ":" not in image or image.endswith(":latest"):
         base_image = image.split(":")[0] if ":" in image else image
-        fallback_image = f"{base_image}:1.0.0"
+        fallback_image = f"{base_image}:alpine" if base_image == "nginx" else f"{base_image}:1.0.0"
         container["image"] = fallback_image
         fixes.append(f"Pinned image for container '{c_name}' from '{image}' to '{fallback_image}'")
-
     sec_ctx = container.setdefault("securityContext", {})
     if sec_ctx.get("privileged", False):
         sec_ctx["privileged"] = False

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: kubeaudit-ai
+description: Automated Kubernetes Manifest Security Audit and Admission Webhook
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
