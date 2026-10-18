@@ -1,3 +1,4 @@
+from app.advisor_cli import run_advise
 import argparse
 import sys
 import yaml
@@ -82,6 +83,12 @@ def main():
 
     fix_parser = subparsers.add_parser("fix", help="Auto-remediate Kubernetes YAML manifests in place")
     fix_parser.add_argument("file", help="Path to Kubernetes YAML manifest")
+
+        # advise subcommand
+    p_advise = subparsers.add_parser("advise", help="AI-assisted remediation advice")
+    p_advise.add_argument("manifest", help="Path to Kubernetes YAML manifest file")
+    p_advise.add_argument("--host", default="https://kubeaudit-ai-production.up.railway.app", help="KubeAudit API base URL")
+    p_advise.set_defaults(func=run_advise)
 
     args = parser.parse_args()
     if args.command == "audit":
