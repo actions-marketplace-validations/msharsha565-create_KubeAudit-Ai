@@ -1,4 +1,3 @@
-from app.policy_engine import policy_engine
 import base64
 import json
 import time
@@ -8,6 +7,8 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
 import yaml
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+
+from app.policy_engine import policy_engine
 
 app = FastAPI(title="KubeAudit AI", version="1.0.0")
 
@@ -223,9 +224,16 @@ def generate_pod_spec_patches(pod_spec: Dict[str, Any], path_prefix: str) -> Lis
 
     sec_ctx = pod_spec.get("securityContext")
     if sec_ctx is None:
-        patches.append({"op": "add", "path": f"{path_prefix}/securityContext", "value": {"runAsNonRoot": True}})
-    elif not sec_ctx.get("runAsNonRoot"):
-        patches.append({"op": "add", "path": f"{path_prefix}/securityContext/runAsNonRoot", "value": True})
+        patches.append({
+            "op": "add",
+            "path": f"{path_prefix}/securityContext",
+            "value": {"runAsNonRoot": True, "runAsUser": 10001}
+        })
+    else:
+        if not sec_ctx.get("runAsNonRoot"):
+            patches.append({"op": "add", "path": f"{path_prefix}/securityContext/runAsNonRoot", "value": True})
+        if "runAsUser" not in sec_ctx:
+            patches.append({"op": "add", "path": f"{path_prefix}/securityContext/runAsUser", "value": 10001})
 
     containers = pod_spec.get("containers", [])
     for idx, container in enumerate(containers):
@@ -235,7 +243,11 @@ def generate_pod_spec_patches(pod_spec: Dict[str, Any], path_prefix: str) -> Lis
         if ":" not in image or image.endswith(":latest"):
             base_image = image.split(":")[0] if ":" in image else image
             fallback_image = f"{base_image}:alpine" if base_image == "nginx" else f"{base_image}:1.0.0"
-            patches.append({"op": "replace" if "image" in container else "add", "path": f"{c_prefix}/image", "value": fallback_image})
+            patches.append({
+                "op": "replace" if "image" in container else "add",
+                "path": f"{c_prefix}/image",
+                "value": fallback_image
+            })
 
         c_sec = container.get("securityContext")
         if c_sec is None:
@@ -257,18 +269,18 @@ def generate_pod_spec_patches(pod_spec: Dict[str, Any], path_prefix: str) -> Lis
                 patches.append({"op": "add", "path": f"{c_prefix}/securityContext/allowPrivilegeEscalation", "value": False})
 
         res = container.get("resources")
+        default_limits = {"cpu": "500m", "memory": "512Mi"}
+        default_requests = {"cpu": "100m", "memory": "128Mi"}
+
         if res is None:
             patches.append({
                 "op": "add",
                 "path": f"{c_prefix}/resources",
-                "value": {
-                    "limits": {"cpu": "500m", "memory": "512Mi"},
-                    "requests": {"cpu": "100m", "memory": "128Mi"}
-                }
+                "value": {"limits": default_limits, "requests": default_requests}
             })
         else:
             if "limits" not in res:
-                patches.append({"op": "add", "path": f"{c_prefix}/resources/limits", "value": {"cpu": "500m", "memory": "512Mi"}})
+                patches.append({"op": "add", "path": f"{c_prefix}/resources/limits", "value": default_limits})
             else:
                 if "cpu" not in res["limits"]:
                     patches.append({"op": "add", "path": f"{c_prefix}/resources/limits/cpu", "value": "500m"})
@@ -276,7 +288,7 @@ def generate_pod_spec_patches(pod_spec: Dict[str, Any], path_prefix: str) -> Lis
                     patches.append({"op": "add", "path": f"{c_prefix}/resources/limits/memory", "value": "512Mi"})
 
             if "requests" not in res:
-                patches.append({"op": "add", "path": f"{c_prefix}/resources/requests", "value": {"cpu": "100m", "memory": "128Mi"}})
+                patches.append({"op": "add", "path": f"{c_prefix}/resources/requests", "value": default_requests})
             else:
                 if "cpu" not in res["requests"]:
                     patches.append({"op": "add", "path": f"{c_prefix}/resources/requests/cpu", "value": "100m"})
@@ -287,7 +299,6 @@ def generate_pod_spec_patches(pod_spec: Dict[str, Any], path_prefix: str) -> Lis
 
 @app.post("/audit", response_model=AuditResponse)
 def audit_manifest(payload: AuditRequest):
-    start_time = time.time()
     try:
         documents = list(yaml.safe_load_all(payload.manifest))
     except Exception as e:
@@ -344,6 +355,10 @@ async def validate_admission(request: Request):
     uid = req.get("uid", "")
     object_spec = req.get("object", {})
 
+    if "kind" not in object_spec and "kind" in req:
+        object_spec["kind"] = req["kind"].get("kind")
+        object_spec["apiVersion"] = req["kind"].get("version")
+
     if not object_spec:
         AUDIT_REQUESTS.labels(endpoint="validate", status="allowed").inc()
         ADMISSION_DURATION.labels(webhook_type="validate").observe(time.time() - start_time)
@@ -358,6 +373,7 @@ async def validate_admission(request: Request):
     for rv in rego_violations:
         if not any(i.rule == rv["rule"] for i in issues):
             issues.append(Issue(severity=rv["severity"], rule=rv["rule"], message=rv["message"]))
+            
     critical_or_high = [i for i in issues if i.severity in ["Critical", "High"]]
 
     if critical_or_high:

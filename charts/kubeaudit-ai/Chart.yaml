@@ -1,6 +1,6 @@
 apiVersion: v2
 name: kubeaudit-ai
-description: Automated Kubernetes Manifest Security Audit and Admission Webhook
+description: KubeAudit AI Admission Controller & Policy Enforcement Engine
 type: application
-version: 0.2.0
-appVersion: "0.2.0"
+version: 0.3.0
+appVersion: "0.3.0"

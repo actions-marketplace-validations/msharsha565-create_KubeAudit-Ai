@@ -1,44 +1,9 @@
-replicaCount: 1
-
-image:
-  repository: kubeaudit-ai
-  pullPolicy: IfNotPresent
-  tag: "latest"
-
-service:
-  type: ClusterIP
-  port: 443
-  targetPort: 8443
-
-resources:
-  limits:
-    cpu: 500m
-    memory: 512Mi
-  requests:
-    cpu: 100m
-    memory: 128Mi
-
-securityContext:
-  runAsNonRoot: true
-  runAsUser: 10001
-  runAsGroup: 10001
-  readOnlyRootFilesystem: true
-  allowPrivilegeEscalation: false
-
 webhook:
+  url: "https://kubeaudit-ai-production.up.railway.app"
+  timeoutSeconds: 30
   failurePolicy: Fail
-  caBundle: ""
-
-serviceMonitor:
-  enabled: false
-  interval: 15s
-  additionalLabels:
-    release: prometheus
-
-tls:
-  secretName: kubeaudit-tls
-
-prometheusRule:
-  enabled: false
-  additionalLabels:
-    release: prometheus
+  reinvocationPolicy: IfNeeded
+  excludedNamespaces:
+    - kube-system
+    - kube-public
+    - kube-node-lease
