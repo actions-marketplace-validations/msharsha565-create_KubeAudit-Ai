@@ -30,6 +30,8 @@ jobs:
           pip install pytest
 
       - name: Run test suite
+        env:
+          PYTHONPATH: .
         run: pytest tests/
 
   build-and-push:
