@@ -15,12 +15,12 @@ spec:
       labels:
         app: {{ .Release.Name }}
     spec:
+      serviceAccountName: default
       securityContext:
-        runAsNonRoot: {{ .Values.securityContext.runAsNonRoot }}
-        runAsUser: {{ .Values.securityContext.runAsUser }}
-        runAsGroup: {{ .Values.securityContext.runAsGroup }}
+        runAsNonRoot: true
+        runAsUser: 10001
       containers:
-        - name: {{ .Chart.Name }}
+        - name: kubeaudit-ai
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command:
@@ -35,17 +35,22 @@ spec:
             - "--ssl-certfile"
             - "/etc/certs/tls.crt"
           ports:
-            - containerPort: {{ .Values.service.targetPort }}
+            - name: https
+              containerPort: 8443
+              protocol: TCP
           volumeMounts:
             - name: tls-certs
-              mountPath: "/etc/certs"
+              mountPath: /etc/certs
+              readOnly: true
+            - name: policies-volume
+              mountPath: /app/policies
               readOnly: true
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          securityContext:
-            readOnlyRootFilesystem: {{ .Values.securityContext.readOnlyRootFilesystem }}
-            allowPrivilegeEscalation: {{ .Values.securityContext.allowPrivilegeEscalation }}
       volumes:
         - name: tls-certs
           secret:
-            secretName: {{ .Release.Name }}-tls
+            secretName: {{ if and .Values.tls .Values.tls.secretName }}{{ .Values.tls.secretName }}{{ else }}kubeaudit-tls{{ end }}
+        - name: policies-volume
+          configMap:
+            name: {{ .Release.Name }}-policies

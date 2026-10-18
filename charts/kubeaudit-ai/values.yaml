@@ -34,3 +34,6 @@ serviceMonitor:
   interval: 15s
   additionalLabels:
     release: prometheus
+
+tls:
+  secretName: kubeaudit-tls
