@@ -91,10 +91,13 @@ def main():
     p_advise.set_defaults(func=run_advise)
 
     args = parser.parse_args()
+    if hasattr(args, "func"):
+        return args.func(args)
     if args.command == "audit":
-        audit_file(args.file)
+        return audit_file(args.file)
     elif args.command == "fix":
-        fix_file(args.file)
+        return fix_file(args.file)
+    return 0
 
 if __name__ == "__main__":
     main()

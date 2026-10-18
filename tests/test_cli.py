@@ -69,3 +69,33 @@ def test_cli_fix_remediates_manifest():
         assert pod_spec["containers"][0]["resources"]["limits"]["cpu"] == "500m"
     finally:
         Path(temp_path).unlink(missing_ok=True)
+
+
+def test_cli_advise_success(monkeypatch, tmp_path):
+    import io
+    import json
+    import urllib.request
+    from app.cli import main
+
+    test_yaml = tmp_path / "insecure.yaml"
+    test_yaml.write_text("apiVersion: v1\nkind: Pod\nmetadata:\n  name: p\nspec:\n  containers:\n    - name: c\n      image: nginx\n")
+
+    fake_response_data = {
+        "available": False,
+        "violations": ["RunAsNonRoot: Pod specification does not enforce runAsNonRoot."],
+        "advice": "Set spec.securityContext.runAsNonRoot to true."
+    }
+
+    class FakeResponse:
+        def read(self):
+            return json.dumps(fake_response_data).encode("utf-8")
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=60: FakeResponse())
+    monkeypatch.setattr("sys.argv", ["kubeaudit", "advise", str(test_yaml)])
+
+    ret = main()
+    assert ret == 0
