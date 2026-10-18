@@ -1,9 +1,10 @@
 import base64
+import json
+from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import RedirectResponse, JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
 import yaml
-from typing import List, Dict, Any, Optional
 
 app = FastAPI(title="KubeAudit AI", version="1.0.0")
 
@@ -133,6 +134,7 @@ def patch_container(container: Dict[str, Any], fixes: List[str]):
         fallback_image = f"{base_image}:alpine" if base_image == "nginx" else f"{base_image}:1.0.0"
         container["image"] = fallback_image
         fixes.append(f"Pinned image for container '{c_name}' from '{image}' to '{fallback_image}'")
+
     sec_ctx = container.setdefault("securityContext", {})
     if sec_ctx.get("privileged", False):
         sec_ctx["privileged"] = False
@@ -189,6 +191,73 @@ def remediate_document(doc: Dict[str, Any], fixes: List[str]):
             patch_container(c, fixes)
         for c in pod_spec.get("ephemeralContainers", []):
             patch_container(c, fixes)
+
+def generate_pod_spec_patches(pod_spec: Dict[str, Any], path_prefix: str) -> List[Dict[str, Any]]:
+    patches = []
+
+    sec_ctx = pod_spec.get("securityContext")
+    if sec_ctx is None:
+        patches.append({"op": "add", "path": f"{path_prefix}/securityContext", "value": {"runAsNonRoot": True}})
+    elif not sec_ctx.get("runAsNonRoot"):
+        patches.append({"op": "add", "path": f"{path_prefix}/securityContext/runAsNonRoot", "value": True})
+
+    containers = pod_spec.get("containers", [])
+    for idx, container in enumerate(containers):
+        c_prefix = f"{path_prefix}/containers/{idx}"
+        image = container.get("image", "")
+
+        if ":" not in image or image.endswith(":latest"):
+            base_image = image.split(":")[0] if ":" in image else image
+            fallback_image = f"{base_image}:alpine" if base_image == "nginx" else f"{base_image}:1.0.0"
+            patches.append({"op": "replace" if "image" in container else "add", "path": f"{c_prefix}/image", "value": fallback_image})
+
+        c_sec = container.get("securityContext")
+        if c_sec is None:
+            patches.append({
+                "op": "add",
+                "path": f"{c_prefix}/securityContext",
+                "value": {
+                    "privileged": False,
+                    "readOnlyRootFilesystem": True,
+                    "allowPrivilegeEscalation": False
+                }
+            })
+        else:
+            if c_sec.get("privileged", False):
+                patches.append({"op": "replace", "path": f"{c_prefix}/securityContext/privileged", "value": False})
+            if not c_sec.get("readOnlyRootFilesystem", False):
+                patches.append({"op": "add", "path": f"{c_prefix}/securityContext/readOnlyRootFilesystem", "value": True})
+            if c_sec.get("allowPrivilegeEscalation", True):
+                patches.append({"op": "add", "path": f"{c_prefix}/securityContext/allowPrivilegeEscalation", "value": False})
+
+        res = container.get("resources")
+        if res is None:
+            patches.append({
+                "op": "add",
+                "path": f"{c_prefix}/resources",
+                "value": {
+                    "limits": {"cpu": "500m", "memory": "512Mi"},
+                    "requests": {"cpu": "100m", "memory": "128Mi"}
+                }
+            })
+        else:
+            if "limits" not in res:
+                patches.append({"op": "add", "path": f"{c_prefix}/resources/limits", "value": {"cpu": "500m", "memory": "512Mi"}})
+            else:
+                if "cpu" not in res["limits"]:
+                    patches.append({"op": "add", "path": f"{c_prefix}/resources/limits/cpu", "value": "500m"})
+                if "memory" not in res["limits"]:
+                    patches.append({"op": "add", "path": f"{c_prefix}/resources/limits/memory", "value": "512Mi"})
+
+            if "requests" not in res:
+                patches.append({"op": "add", "path": f"{c_prefix}/resources/requests", "value": {"cpu": "100m", "memory": "128Mi"}})
+            else:
+                if "cpu" not in res["requests"]:
+                    patches.append({"op": "add", "path": f"{c_prefix}/resources/requests/cpu", "value": "100m"})
+                if "memory" not in res["requests"]:
+                    patches.append({"op": "add", "path": f"{c_prefix}/resources/requests/memory", "value": "128Mi"})
+
+    return patches
 
 @app.get("/health")
 def health_check():
@@ -269,4 +338,51 @@ async def validate_admission(request: Request):
         "apiVersion": "admission.k8s.io/v1",
         "kind": "AdmissionReview",
         "response": {"uid": uid, "allowed": True}
+    })
+
+@app.post("/mutate")
+async def mutate_admission(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON in admission request")
+
+    req = body.get("request", {})
+    uid = req.get("uid", "")
+    object_spec = req.get("object", {})
+
+    if not object_spec:
+        return JSONResponse(content={
+            "apiVersion": "admission.k8s.io/v1",
+            "kind": "AdmissionReview",
+            "response": {"uid": uid, "allowed": True}
+        })
+
+    kind = object_spec.get("kind", "")
+    spec = object_spec.get("spec", {})
+    patches = []
+
+    metadata = object_spec.get("metadata", {})
+    if not metadata.get("namespace") and kind not in ["Namespace", "ClusterRole", "ClusterRoleBinding"]:
+        patches.append({"op": "add", "path": "/metadata/namespace", "value": "default"})
+
+    if kind in ["Deployment", "StatefulSet", "DaemonSet", "Job"]:
+        pod_spec = spec.get("template", {}).get("spec", {})
+        if pod_spec:
+            patches.extend(generate_pod_spec_patches(pod_spec, "/spec/template/spec"))
+    elif kind == "Pod":
+        patches.extend(generate_pod_spec_patches(spec, "/spec"))
+
+    response: Dict[str, Any] = {"uid": uid, "allowed": True}
+
+    if patches:
+        patch_json = json.dumps(patches)
+        patch_base64 = base64.b64encode(patch_json.encode("utf-8")).decode("utf-8")
+        response["patchType"] = "JSONPatch"
+        response["patch"] = patch_base64
+
+    return JSONResponse(content={
+        "apiVersion": "admission.k8s.io/v1",
+        "kind": "AdmissionReview",
+        "response": response
     })

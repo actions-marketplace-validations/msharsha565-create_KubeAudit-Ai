@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 from app.main import app
-
+import base64
+import json
 client = TestClient(app)
 
 def test_health():
@@ -151,3 +152,37 @@ def test_validate_admission_denied_on_high_severity():
     data = response.json()
     assert data["response"]["allowed"] is False
     assert "PrivilegedContainer" in data["response"]["status"]["message"]
+def test_mutate_admission_generates_json_patch():
+    admission_review_payload = {
+        "apiVersion": "admission.k8s.io/v1",
+        "kind": "AdmissionReview",
+        "request": {
+            "uid": "mutate-test-uid",
+            "object": {
+                "apiVersion": "apps/v1",
+                "kind": "Deployment",
+                "metadata": {"name": "unpatched-api"},
+                "spec": {
+                    "template": {
+                        "spec": {
+                            "containers": [{
+                                "name": "web",
+                                "image": "nginx:latest"
+                            }]
+                        }
+                    }
+                }
+            }
+        }
+    }
+    response = client.post("/mutate", json=admission_review_payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["response"]["allowed"] is True
+    assert data["response"]["patchType"] == "JSONPatch"
+    
+    # Decode and verify the patch
+    decoded_patch = json.loads(base64.b64decode(data["response"]["patch"]).decode("utf-8"))
+    paths = [p["path"] for p in decoded_patch]
+    assert "/spec/template/spec/securityContext" in paths
+    assert "/spec/template/spec/containers/0/image" in paths
