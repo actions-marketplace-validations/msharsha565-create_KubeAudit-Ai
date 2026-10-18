@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@4
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -32,6 +32,7 @@ jobs:
       - name: Run Chart Releaser
         uses: helm/chart-releaser-action@v1.7.0
         with:
+          charts_dir: charts
           packages_with_index: true
           skip_existing: true
         env:
