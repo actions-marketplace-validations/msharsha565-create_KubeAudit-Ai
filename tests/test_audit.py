@@ -191,3 +191,22 @@ def test_metrics_endpoint():
     response = client.get("/metrics")
     assert response.status_code == 200
     assert "kubeaudit_requests_total" in response.text
+
+def test_advise_endpoint_fallback():
+    client = TestClient(app)
+    raw_manifest = """
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-insecure
+spec:
+  containers:
+    - name: nginx
+      image: nginx
+"""
+    res = client.post("/advise", json={"manifest": raw_manifest})
+    assert res.status_code == 200
+    data = res.json()
+    assert "violations" in data
+    assert len(data["violations"]) > 0
+    assert "advice" in data

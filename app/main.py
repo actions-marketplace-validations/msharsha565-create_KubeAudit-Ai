@@ -57,6 +57,37 @@ class FixResponse(BaseModel):
     remediated_manifest: str
     applied_fixes: List[str]
 
+from app.ai_advisor import ai_advisor
+
+class AdviseRequest(BaseModel):
+    manifest: str
+
+class AdviseResponse(BaseModel):
+    available: bool
+    violations: List[str]
+    advice: str
+
+@app.post("/advise", response_model=AdviseResponse)
+def advise_manifest(payload: AdviseRequest):
+    try:
+        docs = list(yaml.safe_load_all(payload.manifest))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid YAML payload: {str(e)}")
+
+    valid_docs = [d for d in docs if isinstance(d, dict)]
+    violations = []
+    for d in valid_docs:
+        issues = analyze_manifest(d)
+        violations.extend([f"{i.rule}: {i.message}" for i in issues])
+
+    advice = ai_advisor.explain_violations(payload.manifest, violations)
+    return AdviseResponse(
+        available=ai_advisor.is_available(),
+        violations=violations,
+        advice=advice
+    )
+
+
 def inspect_container_list(containers: List[Dict[str, Any]], container_type: str) -> List[Issue]:
     issues = []
     for container in containers:
