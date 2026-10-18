@@ -84,3 +84,13 @@ kubectl get deployment demo-api -n default -o jsonpath='{.spec.template.spec.sec
 # Verify resource limits injected:
 kubectl get deployment demo-api -n default -o jsonpath='{.spec.template.spec.containers[0].resources}'
 ```
+
+## Helm Installation
+
+KubeAudit AI can be installed directly from the GitHub Pages Helm repository:
+
+```bash
+helm repo add kubeaudit https://msharsha565-create.github.io/KubeAudit-Ai/
+helm repo update
+helm upgrade --install kubeaudit kubeaudit/kubeaudit-ai -n kubeaudit --create-namespace
+```
