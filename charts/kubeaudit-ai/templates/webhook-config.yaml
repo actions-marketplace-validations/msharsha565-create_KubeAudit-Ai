@@ -2,6 +2,8 @@ apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
 metadata:
   name: {{ .Release.Name }}-validating-webhook
+  annotations:
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ .Release.Name }}-certificate
 webhooks:
   - name: {{ .Release.Name }}.local.validator
     rules:
@@ -16,7 +18,6 @@ webhooks:
         namespace: {{ .Release.Namespace }}
         path: "/validate"
         port: {{ .Values.service.port }}
-      caBundle: {{ .Values.webhook.caBundle | quote }}
     admissionReviewVersions: ["v1"]
     sideEffects: None
     timeoutSeconds: 5
@@ -25,4 +26,7 @@ webhooks:
       matchExpressions:
         - key: kubernetes.io/metadata.name
           operator: NotIn
-          values: ["kube-system", {{ .Release.Namespace | quote }}]
+          values:
+            - "kube-system"
+            - {{ .Release.Namespace | quote }}
+            - "cert-manager"
