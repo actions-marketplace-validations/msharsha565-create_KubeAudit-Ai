@@ -1,0 +1,74 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "Admission Decisions Rate (req/sec)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum by (endpoint, status) (rate(kubeaudit_requests_total[5m]))",
+          "legendFormat": "{{endpoint}} - {{status}}"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "title": "Admission Latency (p95 / p99 seconds)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, webhook_type) (rate(kubeaudit_admission_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{webhook_type}} p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, webhook_type) (rate(kubeaudit_admission_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{webhook_type}} p99"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "id": 3,
+      "title": "Violations Detected by Rule",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum by (rule, severity) (rate(kubeaudit_policy_violations_total[5m]))",
+          "legendFormat": "[{{severity}}] {{rule}}"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "id": 4,
+      "title": "Total Processed Admissions",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(kubeaudit_requests_total)",
+          "legendFormat": "Total Requests"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["kubernetes", "kubeaudit-ai", "admission-controller"],
+  "time": { "from": "now-1h", "to": "now" },
+  "timezone": "utc",
+  "title": "KubeAudit AI Admission Controller",
+  "version": 1
+}
