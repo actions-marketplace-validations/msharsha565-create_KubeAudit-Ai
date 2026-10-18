@@ -4,3 +4,4 @@ pyyaml
 pydantic
 httpx
 cryptography
+prometheus-client>=0.20.0

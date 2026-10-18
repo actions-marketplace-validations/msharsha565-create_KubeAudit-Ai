@@ -186,3 +186,8 @@ def test_mutate_admission_generates_json_patch():
     paths = [p["path"] for p in decoded_patch]
     assert "/spec/template/spec/securityContext" in paths
     assert "/spec/template/spec/containers/0/image" in paths
+
+def test_metrics_endpoint():
+    response = client.get("/metrics")
+    assert response.status_code == 200
+    assert "kubeaudit_requests_total" in response.text

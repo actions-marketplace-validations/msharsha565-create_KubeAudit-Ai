@@ -1,16 +1,42 @@
 import base64
 import json
+import time
 from typing import Any, Dict, List, Optional
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
 import yaml
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 
 app = FastAPI(title="KubeAudit AI", version="1.0.0")
+
+AUDIT_REQUESTS = Counter(
+    "kubeaudit_requests_total",
+    "Total audit and admission requests processed",
+    ["endpoint", "status"]
+)
+POLICY_VIOLATIONS = Counter(
+    "kubeaudit_policy_violations_total",
+    "Total policy violations detected by rule",
+    ["rule", "severity"]
+)
+ADMISSION_DURATION = Histogram(
+    "kubeaudit_admission_duration_seconds",
+    "Latency of admission decisions in seconds",
+    ["webhook_type"]
+)
 
 @app.get("/", include_in_schema=False)
 def root():
     return RedirectResponse(url="/docs")
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+
+@app.get("/metrics")
+def get_metrics():
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 class AuditRequest(BaseModel):
     manifest: str
@@ -127,7 +153,6 @@ def analyze_manifest(doc: Dict[str, Any]) -> List[Issue]:
 
 def patch_container(container: Dict[str, Any], fixes: List[str]):
     c_name = container.get("name", "unnamed")
-    
     image = container.get("image", "")
     if ":" not in image or image.endswith(":latest"):
         base_image = image.split(":")[0] if ":" in image else image
@@ -259,24 +284,28 @@ def generate_pod_spec_patches(pod_spec: Dict[str, Any], path_prefix: str) -> Lis
 
     return patches
 
-@app.get("/health")
-def health_check():
-    return {"status": "ok"}
-
 @app.post("/audit", response_model=AuditResponse)
 def audit_manifest(payload: AuditRequest):
+    start_time = time.time()
     try:
         documents = list(yaml.safe_load_all(payload.manifest))
     except Exception as e:
+        AUDIT_REQUESTS.labels(endpoint="audit", status="error").inc()
         raise HTTPException(status_code=400, detail=f"Invalid YAML payload: {str(e)}")
 
     valid_docs = [doc for doc in documents if isinstance(doc, dict)]
     if not valid_docs:
+        AUDIT_REQUESTS.labels(endpoint="audit", status="error").inc()
         raise HTTPException(status_code=400, detail="Manifest does not contain valid YAML object definitions.")
 
     all_issues = []
     for doc in valid_docs:
         all_issues.extend(analyze_manifest(doc))
+
+    status = "valid" if len(all_issues) == 0 else "invalid"
+    AUDIT_REQUESTS.labels(endpoint="audit", status=status).inc()
+    for issue in all_issues:
+        POLICY_VIOLATIONS.labels(rule=issue.rule, severity=issue.severity).inc()
 
     return AuditResponse(valid=(len(all_issues) == 0), issues=all_issues)
 
@@ -285,10 +314,12 @@ def fix_manifest(payload: AuditRequest):
     try:
         documents = list(yaml.safe_load_all(payload.manifest))
     except Exception as e:
+        AUDIT_REQUESTS.labels(endpoint="fix", status="error").inc()
         raise HTTPException(status_code=400, detail=f"Invalid YAML payload: {str(e)}")
 
     valid_docs = [doc for doc in documents if isinstance(doc, dict)]
     if not valid_docs:
+        AUDIT_REQUESTS.labels(endpoint="fix", status="error").inc()
         raise HTTPException(status_code=400, detail="Manifest does not contain valid YAML object definitions.")
 
     applied_fixes = []
@@ -296,13 +327,16 @@ def fix_manifest(payload: AuditRequest):
         remediate_document(doc, applied_fixes)
 
     remediated_yaml = yaml.dump_all(valid_docs, sort_keys=False)
+    AUDIT_REQUESTS.labels(endpoint="fix", status="success").inc()
     return FixResponse(remediated_manifest=remediated_yaml, applied_fixes=applied_fixes)
 
 @app.post("/validate")
 async def validate_admission(request: Request):
+    start_time = time.time()
     try:
         body = await request.json()
     except Exception:
+        AUDIT_REQUESTS.labels(endpoint="validate", status="error").inc()
         raise HTTPException(status_code=400, detail="Invalid JSON in admission request")
 
     req = body.get("request", {})
@@ -310,6 +344,8 @@ async def validate_admission(request: Request):
     object_spec = req.get("object", {})
 
     if not object_spec:
+        AUDIT_REQUESTS.labels(endpoint="validate", status="allowed").inc()
+        ADMISSION_DURATION.labels(webhook_type="validate").observe(time.time() - start_time)
         return JSONResponse(content={
             "apiVersion": "admission.k8s.io/v1",
             "kind": "AdmissionReview",
@@ -320,6 +356,10 @@ async def validate_admission(request: Request):
     critical_or_high = [i for i in issues if i.severity in ["Critical", "High"]]
 
     if critical_or_high:
+        for i in critical_or_high:
+            POLICY_VIOLATIONS.labels(rule=i.rule, severity=i.severity).inc()
+        AUDIT_REQUESTS.labels(endpoint="validate", status="rejected").inc()
+        ADMISSION_DURATION.labels(webhook_type="validate").observe(time.time() - start_time)
         rejection_reasons = "; ".join([f"{i.rule}: {i.message}" for i in critical_or_high])
         return JSONResponse(content={
             "apiVersion": "admission.k8s.io/v1",
@@ -334,6 +374,8 @@ async def validate_admission(request: Request):
             }
         })
 
+    AUDIT_REQUESTS.labels(endpoint="validate", status="allowed").inc()
+    ADMISSION_DURATION.labels(webhook_type="validate").observe(time.time() - start_time)
     return JSONResponse(content={
         "apiVersion": "admission.k8s.io/v1",
         "kind": "AdmissionReview",
@@ -342,9 +384,11 @@ async def validate_admission(request: Request):
 
 @app.post("/mutate")
 async def mutate_admission(request: Request):
+    start_time = time.time()
     try:
         body = await request.json()
     except Exception:
+        AUDIT_REQUESTS.labels(endpoint="mutate", status="error").inc()
         raise HTTPException(status_code=400, detail="Invalid JSON in admission request")
 
     req = body.get("request", {})
@@ -352,6 +396,8 @@ async def mutate_admission(request: Request):
     object_spec = req.get("object", {})
 
     if not object_spec:
+        AUDIT_REQUESTS.labels(endpoint="mutate", status="allowed").inc()
+        ADMISSION_DURATION.labels(webhook_type="mutate").observe(time.time() - start_time)
         return JSONResponse(content={
             "apiVersion": "admission.k8s.io/v1",
             "kind": "AdmissionReview",
@@ -380,7 +426,11 @@ async def mutate_admission(request: Request):
         patch_base64 = base64.b64encode(patch_json.encode("utf-8")).decode("utf-8")
         response["patchType"] = "JSONPatch"
         response["patch"] = patch_base64
+        AUDIT_REQUESTS.labels(endpoint="mutate", status="mutated").inc()
+    else:
+        AUDIT_REQUESTS.labels(endpoint="mutate", status="unmodified").inc()
 
+    ADMISSION_DURATION.labels(webhook_type="mutate").observe(time.time() - start_time)
     return JSONResponse(content={
         "apiVersion": "admission.k8s.io/v1",
         "kind": "AdmissionReview",
