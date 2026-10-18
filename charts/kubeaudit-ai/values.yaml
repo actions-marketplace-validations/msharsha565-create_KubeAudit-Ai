@@ -28,3 +28,9 @@ securityContext:
 webhook:
   failurePolicy: Fail
   caBundle: ""
+
+serviceMonitor:
+  enabled: false
+  interval: 15s
+  additionalLabels:
+    release: prometheus
