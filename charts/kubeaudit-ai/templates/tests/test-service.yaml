@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ .Release.Name }}-test-health"
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+  containers:
+    - name: test-health
+      image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+      imagePullPolicy: IfNotPresent
+      command:
+        - "python"
+        - "-c"
+        - |
+          import httpx, sys
+          url = "https://{{ .Release.Name }}-service:{{ .Values.service.port }}/health"
+          res = httpx.get(url, verify=False, timeout=10.0)
+          print(f"Health response: res.status_code {res.json()}")
+          sys.exit(0 if res.status_code == 200 and res.json().get("status") == "ok" else 1)
