@@ -37,3 +37,8 @@ serviceMonitor:
 
 tls:
   secretName: kubeaudit-tls
+
+prometheusRule:
+  enabled: false
+  additionalLabels:
+    release: prometheus

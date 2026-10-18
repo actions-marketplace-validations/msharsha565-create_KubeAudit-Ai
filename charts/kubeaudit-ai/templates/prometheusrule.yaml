@@ -1,0 +1,32 @@
+{{- if .Values.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ .Release.Name }}-alerts
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: {{ .Release.Name }}
+    {{- with .Values.prometheusRule.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: kubeaudit.rules
+      rules:
+        - alert: HighAdmissionRejectionRate
+          expr: rate(kubeaudit_requests_total{endpoint="validate",status="rejected"}[5m]) > 0.1
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High admission rejection rate in KubeAudit AI"
+            description: "Admission controller rejected more than 10% of deployment requests over the last 5 minutes."
+        - alert: PolicyEngineLatencyHigh
+          expr: histogram_quantile(0.95, sum(rate(kubeaudit_admission_duration_seconds_bucket[5m])) by (le)) > 0.1
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "KubeAudit AI admission webhook latency exceeding 100ms"
+            description: "P95 admission evaluation latency is above 100ms, risking Kubernetes API server webhook timeouts."
+{{- end }}
