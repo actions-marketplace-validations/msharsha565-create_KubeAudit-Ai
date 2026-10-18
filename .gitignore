@@ -5,3 +5,7 @@ __pycache__/
 .pytest_cache/
 *.swp
 .DS_Store
+
+*.egg-info/
+*.egg-info
+*.pyc
