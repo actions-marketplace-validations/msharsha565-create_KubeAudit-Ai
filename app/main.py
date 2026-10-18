@@ -1,3 +1,4 @@
+from app.policy_engine import policy_engine
 import base64
 import json
 import time
@@ -353,6 +354,10 @@ async def validate_admission(request: Request):
         })
 
     issues = analyze_manifest(object_spec)
+    rego_violations = policy_engine.evaluate(object_spec)
+    for rv in rego_violations:
+        if not any(i.rule == rv["rule"] for i in issues):
+            issues.append(Issue(severity=rv["severity"], rule=rv["rule"], message=rv["message"]))
     critical_or_high = [i for i in issues if i.severity in ["Critical", "High"]]
 
     if critical_or_high:
