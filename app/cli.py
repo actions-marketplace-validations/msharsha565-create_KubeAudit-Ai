@@ -2,9 +2,65 @@ import argparse
 import sys
 from pathlib import Path
 import yaml
-import requests
+import json
+import urllib.request
+import urllib.error
 
 from app.policy_engine import policy_engine
+
+
+def remediate_document(doc: dict, all_fixes: list = None):
+    """Remediates common security issues in-place in a manifest dictionary."""
+    if all_fixes is None:
+        all_fixes = []
+
+    kind = doc.get("kind", "")
+    spec = doc.get("spec", {})
+
+    pod_spec = None
+    if kind in ["Deployment", "StatefulSet", "DaemonSet", "Job"]:
+        pod_spec = spec.setdefault("template", {}).setdefault("spec", {})
+    elif kind == "Pod":
+        pod_spec = spec
+
+    if pod_spec is not None:
+        # Enforce runAsNonRoot
+        sec_ctx = pod_spec.setdefault("securityContext", {})
+        if not sec_ctx.get("runAsNonRoot"):
+            sec_ctx["runAsNonRoot"] = True
+            all_fixes.append("Set spec.securityContext.runAsNonRoot: true")
+
+        # Container fixes
+        for c in pod_spec.get("containers", []):
+            name = c.get("name", "container")
+            c_sec = c.setdefault("securityContext", {})
+            if c_sec.get("privileged"):
+                c_sec["privileged"] = False
+                all_fixes.append(f"Set container '{name}' securityContext.privileged: false")
+            if not c_sec.get("readOnlyRootFilesystem"):
+                c_sec["readOnlyRootFilesystem"] = True
+                all_fixes.append(f"Set container '{name}' securityContext.readOnlyRootFilesystem: true")
+            if c_sec.get("allowPrivilegeEscalation") is not False:
+                c_sec["allowPrivilegeEscalation"] = False
+                all_fixes.append(f"Set container '{name}' securityContext.allowPrivilegeEscalation: false")
+
+            # Pin image tag
+            image = c.get("image", "")
+            if image.endswith(":latest") or ":" not in image:
+                base = image.split(":")[0]
+                c["image"] = f"{base}:pinned"
+                all_fixes.append(f"Pinned image for container '{name}'")
+
+            # Limits / requests
+            res = c.setdefault("resources", {})
+            limits = res.setdefault("limits", {})
+            if "cpu" not in limits:
+                limits["cpu"] = "500m"
+                all_fixes.append(f"Set resources.limits.cpu for '{name}'")
+            if "memory" not in limits:
+                limits["memory"] = "512Mi"
+                all_fixes.append(f"Set resources.limits.memory for '{name}'")
+    return doc
 
 
 def load_manifests(file_path: str):
@@ -40,7 +96,7 @@ def audit_file(file_path: str, exit_on_fail: bool = True):
         namespace = doc.get("metadata", {}).get("namespace", "default")
         issues = policy_engine.evaluate(doc)
         if issues:
-            print(f"\n[FAILED] {kind}/{name} (namespace: {namespace}) in {file_path}:")
+            print(f"\\n[FAILED] {kind}/{name} (namespace: {namespace}) in {file_path}:")
             for issue in issues:
                 rule = issue.get("rule", "PolicyViolation")
                 severity = issue.get("severity", "Medium")
@@ -54,13 +110,15 @@ def audit_file(file_path: str, exit_on_fail: bool = True):
             print(f"[PASSED] {kind}/{name} (namespace: {namespace})")
 
     if total_violations and exit_on_fail:
-        print(f"\nTotal security policy violations: {len(total_violations)}")
+        print(f"\\nTotal security policy violations: {len(total_violations)}")
         sys.exit(1)
     elif not total_violations:
-        print(f"\nAll manifests in {file_path} conform to security policies.")
+        print(f"\\nAll manifests in {file_path} conform to security policies.")
+    return 0
 
 
 def audit_remote(file_path: str, host: str, api_key: str):
+    import requests
     docs = load_manifests(file_path)
     valid_docs = [d for d in docs if isinstance(d, dict)]
     total_violations = 0
@@ -81,16 +139,16 @@ def audit_remote(file_path: str, host: str, api_key: str):
         )
 
         if resp.status_code == 429:
-            print(f"\n[QUOTA EXCEEDED] {resp.json().get('detail')}")
+            print(f"\\n[QUOTA EXCEEDED] {resp.json().get('detail')}")
             sys.exit(1)
         elif resp.status_code != 200:
-            print(f"\n[ERROR {resp.status_code}] {resp.text}")
+            print(f"\\n[ERROR {resp.status_code}] {resp.text}")
             sys.exit(1)
 
         data = resp.json()
         issues = data.get("issues", [])
         if issues:
-            print(f"\n[FAILED] {kind}/{name} (namespace: {namespace}) [SaaS Audit]:")
+            print(f"\\n[FAILED] {kind}/{name} (namespace: {namespace}) [SaaS Audit]:")
             for issue in issues:
                 rule = issue.get("rule", "PolicyViolation")
                 severity = issue.get("severity", "Medium")
@@ -101,10 +159,11 @@ def audit_remote(file_path: str, host: str, api_key: str):
             print(f"[PASSED] {kind}/{name} (namespace: {namespace}) [SaaS Audit]")
 
     if total_violations:
-        print(f"\nTotal security policy violations: {total_violations}")
+        print(f"\\nTotal security policy violations: {total_violations}")
         sys.exit(1)
     else:
-        print("\nAll manifests conform to security policies.")
+        print("\\nAll manifests conform to security policies.")
+    return 0
 
 
 def fix_file(file_path: str):
@@ -128,6 +187,7 @@ def fix_file(file_path: str):
     print(f"Successfully remediated {file_path}:")
     for fix in all_fixes:
         print(f"  - {fix}")
+    return 0
 
 
 def run_advise(args):
@@ -137,13 +197,20 @@ def run_advise(args):
         sys.exit(1)
 
     manifest_yaml = path.read_text()
-    resp = requests.post(f"{args.host}/v1/advise", json={"manifest": manifest_yaml})
-    if resp.status_code == 200:
-        data = resp.json()
-        print(f"Advice from {data.get('source', 'engine')}:")
-        print(data.get("remediation", ""))
-    else:
-        print(f"Error ({resp.status_code}): {resp.text}", file=sys.stderr)
+    url = f"{args.host.rstrip('/')}/advise"
+    req = urllib.request.Request(
+        url,
+        data=json.dumps({"manifest": manifest_yaml}).encode("utf-8"),
+        headers={"Content-Type": "application/json"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            print(f"Advice from {data.get('source', 'engine')}:")
+            print(data.get("advice", data.get("remediation", "")))
+            return 0
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -169,15 +236,19 @@ def main():
 
     args = parser.parse_args()
     if hasattr(args, "func"):
-        return args.func(args)
+        res = args.func(args)
+        return res if res is not None else 0
     if args.command == "audit":
         if getattr(args, "key", None):
-            return audit_remote(args.file, args.host, args.key)
-        return audit_file(args.file)
+            res = audit_remote(args.file, args.host, args.key)
+            return res if res is not None else 0
+        res = audit_file(args.file)
+        return res if res is not None else 0
     elif args.command == "fix":
-        return fix_file(args.file)
+        res = fix_file(args.file)
+        return res if res is not None else 0
     return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
