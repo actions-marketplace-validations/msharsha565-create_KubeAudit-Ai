@@ -1,7 +1,7 @@
 webhook:
   url: "https://kubeaudit-ai-production.up.railway.app"
-  timeoutSeconds: 30
-  failurePolicy: Fail
+  timeoutSeconds: 2
+  failurePolicy: Ignore
   reinvocationPolicy: IfNeeded
   excludedNamespaces:
     - kube-system
