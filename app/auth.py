@@ -1,0 +1,45 @@
+import secrets
+from fastapi import Header, HTTPException, Depends, status
+from sqlalchemy.orm import Session
+from app.database import get_db
+from app.models import User, PlanTier
+
+# Maximum audits allowed per tier
+TIER_LIMITS = {
+    PlanTier.FREE: 50,
+    PlanTier.PRO: 2500,
+    PlanTier.ENTERPRISE: 1000000,
+}
+
+
+def generate_api_key(prefix: str = "ka_live_") -> str:
+    return f"{prefix}{secrets.token_urlsafe(32)}"
+
+
+def get_current_user(
+    x_api_key: str = Header(..., alias="X-API-Key"),
+    db: Session = Depends(get_db)
+) -> User:
+    user = db.query(User).filter(User.api_key == x_api_key).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing X-API-Key"
+        )
+    if user.subscription_status not in ["active", "trialing"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Subscription inactive. Please update billing."
+        )
+    return user
+
+
+def verify_quota(user: User = Depends(get_current_user)) -> User:
+    limit = TIER_LIMITS.get(user.subscription_tier, 50)
+    current_count = len(user.audits)
+    if current_count >= limit:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Tier limit of {limit} audits reached. Upgrade to Pro."
+        )
+    return user

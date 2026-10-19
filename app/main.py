@@ -1,3 +1,18 @@
+from fastapi import Depends
+
+from app.database import get_db
+from app.auth import verify_quota
+from app.models import User, AuditLog
+from sqlalchemy.orm import Session
+
+
+from app.database import init_db
+from app.billing import router as billing_router
+from app.auth import get_current_user, verify_quota
+from app.models import User, AuditLog
+from app.database import get_db
+from sqlalchemy.orm import Session
+
 import base64
 import json
 import time
@@ -328,30 +343,40 @@ def generate_pod_spec_patches(pod_spec: Dict[str, Any], path_prefix: str) -> Lis
 
     return patches
 
-@app.post("/audit", response_model=AuditResponse)
-def audit_manifest(payload: AuditRequest):
+@app.post("/audit")
+async def audit_endpoint(
+    payload: dict,
+    user: User = Depends(verify_quota),
+    db: Session = Depends(get_db)
+):
+    manifest = payload.get("manifest")
+    if not manifest:
+        raise HTTPException(status_code=400, detail="Missing 'manifest' in request body")
+
+    import yaml
+    from app.policy_engine import policy_engine
+
     try:
-        documents = list(yaml.safe_load_all(payload.manifest))
+        if isinstance(manifest, str):
+            doc = yaml.safe_load(manifest)
+        else:
+            doc = manifest
     except Exception as e:
-        AUDIT_REQUESTS.labels(endpoint="audit", status="error").inc()
-        raise HTTPException(status_code=400, detail=f"Invalid YAML payload: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Invalid YAML/JSON manifest: {str(e)}")
 
-    valid_docs = [doc for doc in documents if isinstance(doc, dict)]
-    if not valid_docs:
-        AUDIT_REQUESTS.labels(endpoint="audit", status="error").inc()
-        raise HTTPException(status_code=400, detail="Manifest does not contain valid YAML object definitions.")
+    issues = policy_engine.evaluate(doc)
+    is_valid = len(issues) == 0
 
-    all_issues = []
-    for doc in valid_docs:
-        all_issues.extend(analyze_manifest(doc))
+    # Record persistent audit entry against the authenticated user
+    audit_entry = AuditLog(
+        user_id=user.id,
+        resource_count=1,
+        violations_detected=len(issues)
+    )
+    db.add(audit_entry)
+    db.commit()
 
-    status = "valid" if len(all_issues) == 0 else "invalid"
-    AUDIT_REQUESTS.labels(endpoint="audit", status=status).inc()
-    for issue in all_issues:
-        POLICY_VIOLATIONS.labels(rule=issue.rule, severity=issue.severity).inc()
-
-    return AuditResponse(valid=(len(all_issues) == 0), issues=all_issues)
-
+    return {"valid": is_valid, "issues": issues}
 @app.post("/fix", response_model=FixResponse)
 def fix_manifest(payload: AuditRequest):
     try:
@@ -488,3 +513,11 @@ async def mutate_admission(request: Request):
         "kind": "AdmissionReview",
         "response": response
     })
+
+# Register commercial billing routes
+app.include_router(billing_router)
+
+@app.on_event("startup")
+def on_startup():
+    init_db()
+
