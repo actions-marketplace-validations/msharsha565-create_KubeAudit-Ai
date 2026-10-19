@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger("kubeaudit.main")
 from contextlib import asynccontextmanager
 from fastapi import Depends
 
@@ -440,6 +442,17 @@ async def validate_admission(request: Request):
         if not any(i.rule == rv["rule"] for i in issues):
             issues.append(Issue(severity=rv["severity"], rule=rv["rule"], message=rv["message"]))
             
+    # AI Security Audit Enrichment
+    try:
+        if ai_advisor.is_available():
+            violation_dicts = [{"rule": i.rule, "severity": i.severity, "message": i.message} for i in issues]
+            ai_report = await ai_advisor.audit_manifest(object_spec, violations=violation_dicts)
+        for finding in (ai_report.findings if "ai_report" in locals() else []):
+            if not any(i.rule == finding.rule_id for i in issues):
+                issues.append(Issue(severity=finding.severity, rule=finding.rule_id, message=finding.description))
+    except Exception as e:
+        logger.warning(f"AI validation enrichment error: {e}")
+
     critical_or_high = [i for i in issues if i.severity in ["Critical", "High"]]
 
     if critical_or_high:
@@ -505,6 +518,16 @@ async def mutate_admission(request: Request):
             patches.extend(generate_pod_spec_patches(pod_spec, "/spec/template/spec"))
     elif kind == "Pod":
         patches.extend(generate_pod_spec_patches(spec, "/spec"))
+
+    # AI Mutation Enrichment
+    try:
+        ai_report = await ai_advisor.audit_manifest(object_spec)
+        for patch_op in ai_report.suggested_patches:
+            patch_dict = patch_op.model_dump(exclude_none=True)
+            if patch_dict not in patches:
+                patches.append(patch_dict)
+    except Exception as e:
+        logger.warning(f"AI mutation enrichment error: {e}")
 
     response: Dict[str, Any] = {"uid": uid, "allowed": True}
 
