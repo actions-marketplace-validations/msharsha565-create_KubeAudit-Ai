@@ -9,6 +9,8 @@ description = "Kubernetes security auditing and admission webhook engine"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "alembic>=1.13.0",
+    "stripe>=7.0.0",
     "fastapi",
     "uvicorn",
     "pyyaml",

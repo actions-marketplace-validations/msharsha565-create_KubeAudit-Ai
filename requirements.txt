@@ -5,3 +5,5 @@ pydantic
 httpx
 cryptography
 prometheus-client>=0.20.0
+stripe>=7.0.0
+alembic>=1.13.0
