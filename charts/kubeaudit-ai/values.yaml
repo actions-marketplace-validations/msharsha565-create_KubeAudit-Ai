@@ -7,3 +7,10 @@ webhook:
     - kube-system
     - kube-public
     - kube-node-lease
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/msharsha565-create/kubeaudit-ai
+  pullPolicy: IfNotPresent
+  tag: ""
