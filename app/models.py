@@ -1,6 +1,6 @@
 import enum
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, String, DateTime, Enum, Integer, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base, relationship
@@ -23,7 +23,7 @@ class User(Base):
     stripe_customer_id = Column(String(128), unique=True, nullable=True)
     subscription_tier = Column(Enum(PlanTier), default=PlanTier.FREE, nullable=False)
     subscription_status = Column(String(50), default="active", nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     audits = relationship("AuditLog", back_populates="user", cascade="all, delete-orphan")
 
@@ -35,6 +35,6 @@ class AuditLog(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
     resource_count = Column(Integer, default=1, nullable=False)
     violations_detected = Column(Integer, default=0, nullable=False)
-    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     user = relationship("User", back_populates="audits")

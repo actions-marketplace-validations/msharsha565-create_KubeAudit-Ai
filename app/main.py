@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import Depends
 
 from app.database import get_db
@@ -25,7 +26,13 @@ from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_
 
 from app.policy_engine import policy_engine
 
-app = FastAPI(title="KubeAudit AI", version="1.0.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    yield
+
+app = FastAPI(lifespan=lifespan, title="KubeAudit AI", version="1.0.0")
 
 AUDIT_REQUESTS = Counter(
     "kubeaudit_requests_total",
@@ -517,7 +524,5 @@ async def mutate_admission(request: Request):
 # Register commercial billing routes
 app.include_router(billing_router)
 
-@app.on_event("startup")
-def on_startup():
-    init_db()
+
 
