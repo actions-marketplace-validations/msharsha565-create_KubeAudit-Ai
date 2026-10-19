@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kubeaudit-ai.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: {{ include "kubeaudit-ai.name" . }}
+    app: {{ include "kubeaudit-ai.name" . }}
+spec:
+  replicas: {{ .Values.replicaCount | default 1 }}
+  selector:
+    matchLabels:
+      app: {{ include "kubeaudit-ai.name" . }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "kubeaudit-ai.name" . }}
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
+          command:
+            - uvicorn
+            - app.main:app
+            - --host
+            - "0.0.0.0"
+            - --port
+            - "8443"
+            - --ssl-keyfile
+            - /etc/webhook/certs/tls.key
+            - --ssl-certfile
+            - /etc/webhook/certs/tls.crt
+          ports:
+            - containerPort: 8443
+          volumeMounts:
+            - name: certs
+              mountPath: /etc/webhook/certs
+              readOnly: true
+      volumes:
+        - name: certs
+          secret:
+            secretName: {{ include "kubeaudit-ai.fullname" . }}-tls
