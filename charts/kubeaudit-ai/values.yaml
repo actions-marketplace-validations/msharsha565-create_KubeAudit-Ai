@@ -14,3 +14,6 @@ image:
   repository: ghcr.io/msharsha565-create/kubeaudit-ai
   pullPolicy: IfNotPresent
   tag: ""
+
+tls:
+  autoGenerate: true
