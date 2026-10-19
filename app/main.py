@@ -1,3 +1,4 @@
+from fastapi import Depends
 
 from app.database import get_db
 from app.auth import verify_quota
@@ -519,3 +520,4 @@ app.include_router(billing_router)
 @app.on_event("startup")
 def on_startup():
     init_db()
+
