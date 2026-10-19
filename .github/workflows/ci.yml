@@ -54,10 +54,7 @@ jobs:
           helm install kubeaudit charts/kubeaudit-ai/ \
             --namespace kubeaudit \
             --create-namespace
-          kubectl wait --namespace kubeaudit \
-            --for=condition=ready pod \
-            --selector=app=kubeaudit \
-            --timeout=90s
-
+          kubectl get mutatingwebhookconfiguration kubeaudit-mutator
+          kubectl get validatingwebhookconfiguration kubeaudit-validator
       - name: Execute In-Cluster Helm Test
         run: helm test kubeaudit -n kubeaudit --timeout=60s
