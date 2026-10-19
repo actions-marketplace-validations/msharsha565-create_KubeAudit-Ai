@@ -89,7 +89,8 @@ class AdviseResponse(BaseModel):
     violations: List[str]
     advice: str
 
-@app.post("/advise", response_model=AdviseResponse)
+@app.post("/advise")
+@app.post("/v1/advise", response_model=AdviseResponse)
 def advise_manifest(payload: AdviseRequest):
     try:
         docs = list(yaml.safe_load_all(payload.manifest))
@@ -371,6 +372,8 @@ async def audit_endpoint(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid YAML/JSON manifest: {str(e)}")
 
+    if not isinstance(doc, dict):
+        raise HTTPException(status_code=400, detail="Manifest does not contain valid YAML object definitions.")
     issues = policy_engine.evaluate(doc)
     is_valid = len(issues) == 0
 

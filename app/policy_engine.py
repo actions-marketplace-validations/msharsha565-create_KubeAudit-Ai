@@ -13,7 +13,10 @@ class RegoPolicyEngine:
         if os.path.exists(self.policy_file):
             self.rules_loaded = True
 
-    def evaluate(self, manifest: Dict[str, Any]) -> List[Dict[str, str]]:
+    def evaluate(self, manifest: Any) -> List[Dict[str, str]]:
+        if not isinstance(manifest, dict):
+            return []
+
         violations: List[Dict[str, str]] = []
         kind = manifest.get("kind", "")
         spec = manifest.get("spec", {})
@@ -24,33 +27,61 @@ class RegoPolicyEngine:
         elif kind == "Pod":
             pod_spec = spec
 
-        if pod_spec is not None:
-            sec_ctx = pod_spec.get("securityContext", None)
-            if not sec_ctx or not sec_ctx.get("runAsNonRoot"):
+        if pod_spec is not None and isinstance(pod_spec, dict):
+            sec_ctx = pod_spec.get("securityContext") or {}
+            if not sec_ctx.get("runAsNonRoot"):
                 violations.append({
                     "rule": "RunAsNonRoot",
                     "severity": "High",
-                    "message": "Pod securityContext must enforce runAsNonRoot: true"
+                    "message": "Pod securityContext must enforce runAsNonRoot: true",
+                    "remediation": "Configure spec.securityContext.runAsNonRoot: true."
                 })
 
             containers = pod_spec.get("containers", [])
             for c in containers:
+                if not isinstance(c, dict):
+                    continue
                 c_name = c.get("name", "unnamed")
-                c_sec = c.get("securityContext", {})
+                c_sec = c.get("securityContext") or {}
                 if c_sec.get("privileged") is True:
                     violations.append({
                         "rule": "PrivilegedContainer",
                         "severity": "Critical",
-                        "message": f"Container '{c_name}' must not run in privileged mode"
+                        "message": f"Container '{c_name}' must not run in privileged mode",
+                        "remediation": f"Set securityContext.privileged: false on container '{c_name}'."
+                    })
+                if not c_sec.get("readOnlyRootFilesystem"):
+                    violations.append({
+                        "rule": "ReadOnlyRootFilesystem",
+                        "severity": "Medium",
+                        "message": f"Container '{c_name}' does not configure readOnlyRootFilesystem: true",
+                        "remediation": f"Set securityContext.readOnlyRootFilesystem: true on container '{c_name}'."
+                    })
+                if c_sec.get("allowPrivilegeEscalation") is True:
+                    violations.append({
+                        "rule": "AllowPrivilegeEscalation",
+                        "severity": "High",
+                        "message": f"Container '{c_name}' allows privilege escalation",
+                        "remediation": f"Set securityContext.allowPrivilegeEscalation: false on container '{c_name}'."
                     })
 
-                resources = c.get("resources", {})
-                limits = resources.get("limits", None)
-                if not limits or not limits.get("cpu") or not limits.get("memory"):
+                image = c.get("image", "")
+                if image.endswith(":latest") or ":" not in image:
+                    violations.append({
+                        "rule": "AvoidLatestTag",
+                        "severity": "Medium",
+                        "message": f"Container '{c_name}' uses the ':latest' image tag or omitted tag.",
+                        "remediation": f"Pin container '{c_name}' image to an immutable tag or SHA256 digest."
+                    })
+
+                res = c.get("resources") or {}
+                limits = res.get("limits") or {}
+                if not limits.get("cpu") or not limits.get("memory"):
                     violations.append({
                         "rule": "MissingResourceLimits",
                         "severity": "High",
-                        "message": f"Container '{c_name}' lacks CPU or Memory limits"
+                        "message": f"Container '{c_name}' lacks CPU or Memory limits",
+                        "remediation": f"Configure resources.limits for container '{c_name}'."
                     })
 
         return violations
