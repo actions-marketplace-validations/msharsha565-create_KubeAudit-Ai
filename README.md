@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: msharsha565-create/KubeAudit-Ai@v0.5.0
+      - uses: msharsha565-create/KubeAudit-Ai@v1.1.0
         with:
           fail-on: high        # critical | high | medium | low | none
           only-changed: true   # scan just the files this PR touches
