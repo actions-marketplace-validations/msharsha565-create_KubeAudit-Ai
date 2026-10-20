@@ -1,4 +1,4 @@
-{{- $certs := include "kubeaudit-ai.gen-certs" . | fromYaml }}
+{{- $certs := include "kubeaudit-ai.certs" . | fromYaml }}
 apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingWebhookConfiguration
 metadata:
@@ -9,17 +9,11 @@ metadata:
 webhooks:
   - name: mutate.kubeaudit.ai
     clientConfig:
-      {{- if eq .Values.webhook.mode "url" }}
-      url: "{{ .Values.webhook.url }}/mutate"
-      {{- else }}
       service:
         name: {{ include "kubeaudit-ai.fullname" . }}
         namespace: {{ .Release.Namespace }}
         path: "/mutate"
-      {{- if .Values.tls.autoGenerate }}
       caBundle: {{ $certs.caCrt }}
-      {{- end }}
-      {{- end }}
     rules:
       - operations: ["CREATE"]
         apiGroups: ["*"]
@@ -28,50 +22,15 @@ webhooks:
         scope: "Namespaced"
     admissionReviewVersions: ["v1"]
     sideEffects: None
-    timeoutSeconds: {{ .Values.webhook.timeoutSeconds | default 2 }}
-    failurePolicy: {{ .Values.webhook.failurePolicy | default "Ignore" }}
-    reinvocationPolicy: {{ .Values.webhook.reinvocationPolicy | default "IfNeeded" }}
+    timeoutSeconds: 2
+    failurePolicy: Ignore
+    reinvocationPolicy: IfNeeded
     namespaceSelector:
       matchExpressions:
         - key: kubernetes.io/metadata.name
           operator: NotIn
           values:
-{{ toYaml .Values.webhook.excludedNamespaces | indent 12 }}
----
-apiVersion: admissionregistration.k8s.io/v1
-kind: ValidatingWebhookConfiguration
-metadata:
-  name: {{ include "kubeaudit-ai.fullname" . }}-validator
-  labels:
-    app.kubernetes.io/name: {{ include "kubeaudit-ai.name" . }}
-    app.kubernetes.io/instance: {{ .Release.Name }}
-webhooks:
-  - name: audit.kubeaudit.ai
-    clientConfig:
-      {{- if eq .Values.webhook.mode "url" }}
-      url: "{{ .Values.webhook.url }}/validate"
-      {{- else }}
-      service:
-        name: {{ include "kubeaudit-ai.fullname" . }}
-        namespace: {{ .Release.Namespace }}
-        path: "/validate"
-      {{- if .Values.tls.autoGenerate }}
-      caBundle: {{ $certs.caCrt }}
-      {{- end }}
-      {{- end }}
-    rules:
-      - operations: ["CREATE", "UPDATE"]
-        apiGroups: ["*"]
-        apiVersions: ["*"]
-        resources: ["pods"]
-        scope: "Namespaced"
-    admissionReviewVersions: ["v1"]
-    sideEffects: None
-    timeoutSeconds: {{ .Values.webhook.timeoutSeconds | default 2 }}
-    failurePolicy: {{ .Values.webhook.failurePolicy | default "Ignore" }}
-    namespaceSelector:
-      matchExpressions:
-        - key: kubernetes.io/metadata.name
-          operator: NotIn
-          values:
-{{ toYaml .Values.webhook.excludedNamespaces | indent 12 }}
+            - kube-system
+            - kube-public
+            - kube-node-lease
+            - kubeaudit
