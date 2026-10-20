@@ -102,97 +102,52 @@ metadata:
 
 ## In-cluster admission webhook
 
-The same project also ships a validating and mutating admission webhook. The sections below cover deploying it.
+The same project ships a validating and mutating admission webhook for pods.
 
----
+- **FastAPI service (`app/main.py`)** with `/audit`, `/fix`, `/validate` and `/mutate` endpoints, plus `/health` and Prometheus `/metrics`.
+- **Mutating webhook:** on pod creation it adds a non-root security context, turns off privilege escalation and privileged mode, and adds default CPU and memory limits and requests. Images are never rewritten; unpinned images are reported instead.
+- **Validating webhook:** denies pods that still have critical or high findings.
+- **TLS:** the Helm chart generates its own CA and serving certificate (`tls.autoGenerate: true`) and injects the CA into both webhook configurations. cert-manager is not required.
+- **Safe defaults:** `kube-system`, `kube-public`, `kube-node-lease` and the `kubeaudit` namespace are excluded. The webhook itself runs non-root with a read-only root filesystem.
 
-## Architecture Overview
-
-* **FastAPI Core (`app/main.py`)**: Implements `/audit`, `/fix`, `/validate`, and `/mutate` endpoints.
-* **Automated TLS (`cert-manager`*)*: Issues self-signed cluster certificates and leverages `cert-manager.io/inject-ca-from` to populate the admission webhook `caBundle`$ynamically.
-* **Self-Healing Webhook**:
-  * **Validating Webhook**: Intercepts admission requests and denies non-compliant deployments (`runAsNonRoot: false`, privileged containers, missing resource limits).
-  * **Mutating Webhook**: Transparently patches insecure manifests during creation (injects non-root security contexts and default CPU/memory limits). Images are never rewritten; unpinned images are reported instead.
-* **Helm Packaging (`charts/kubeaudit-ai`*)*: Complete Helm v2 deployment with automated `helm test` health verification.
-
----
-
-## Local Development & Cluster Setup
-
-### Prerequisites
-* Docker
-* `kind` (Kubernetes in Docker)
-* `kubectl`
-* `helm` (v3+)
-
-### 1. Build Application Image
-To ensure compatibility with containerd CRI in `kind`, disable BuildKit provenance attestations:
-```bash
-docker build --provenance=false -t kubeaudit-ai:latest .
-```
-
-### 2. Sideload Images into Kind
-```bash
-for img in \
-  quay.io/jetstack/cert-manager-controller:v1.16.1 \
-  quay.io/jetstack/cert-manager-cainjector:v1.16.1 \
-  quay.io/jetstack/cert-manager-webhook:v1.16.1 \
-  kubeaudit-ai:latest; do
-    docker save "$img" | docker exec -i kubeaudit-test-control-plane ctr -n k8s.io images import -
-done
-```
-
-### 3. Deploy cert-manager
-```bash
-kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.1/cert-manager.yaml
-kubectl wait --namespace cert-manager --for_condition=ready pod --all --timeout=90s
-```
-
-### 4. Deploy KubeAudit AI via Helm
-```bash
-helm upgrade --install kubeaudit charts/kubeaudit-ai/ \
-  --namespace kubeaudit \
-  --create-namespace
-
-kubectl wait --namespace kubeaudit \
-  --for=condition=ready pod \
-  --selector=app=kubeaudit \
-  --timeout=60s
-```
-
----
-
-## Verification & Testing
-
-### Run Automated In-Cluster Helm Test
-```bash
-helm test kubeaudit -n kubeaudit --timeout 60s
-```
-
-### Verify Dynamic Manifest Mutation
-Deploy an unpatched, insecure manifest:
-```bash
-kubectl apply -f manifests/sample-deployment.yaml
-```
-
-Verify that the mutating webhook auto-injected security constraints:
-```bash
-# Verify container image pinned:
-kubectl get deployment demo-api -n default -o jsonpath='{.spec.template.spec.containers[0].image}'
-
-# Verify non-root enforcement:
-kubectl get deployment demo-api -n default -o jsonpath='{.spec.template.spec.securityContext.runAsNonRoot}'
-
-# Verify resource limits injected:
-kubectl get deployment demo-api -n default -o jsonpath='{.spec.template.spec.containers[0].resources}'
-```
-
-## Helm Installation
-
-KubeAudit AI can be installed directly from the GitHub Pages Helm repository:
+### Install from the Helm repository
 
 ```bash
 helm repo add kubeaudit https://msharsha565-create.github.io/KubeAudit-Ai/
 helm repo update
 helm upgrade --install kubeaudit kubeaudit/kubeaudit-ai -n kubeaudit --create-namespace
+kubectl rollout status deployment/kubeaudit-kubeaudit-ai -n kubeaudit --timeout=180s
 ```
+
+### Local development with kind
+
+These are the same steps CI runs on every push.
+
+```bash
+kind create cluster --name kubeaudit
+docker build --provenance=false -t kubeaudit-ai:latest .
+kind load docker-image kubeaudit-ai:latest --name kubeaudit
+
+helm upgrade --install kubeaudit charts/kubeaudit-ai/ \
+  --namespace kubeaudit --create-namespace \
+  --set image.repository=kubeaudit-ai \
+  --set image.tag=latest \
+  --set image.pullPolicy=Never
+
+kubectl rollout status deployment/kubeaudit-kubeaudit-ai -n kubeaudit --timeout=180s
+```
+
+### See the mutation happen
+
+Apply the deliberately insecure sample. The webhook patches the **pods** it creates, so inspect a pod rather than the Deployment:
+
+```bash
+kubectl apply -f manifests/sample-deployment.yaml
+POD=$(kubectl get pod -n default -l app=demo-api -o jsonpath='{.items[0].metadata.name}')
+
+kubectl get pod "$POD" -n default -o jsonpath='{.spec.securityContext.runAsNonRoot}{"\n"}'
+kubectl get pod "$POD" -n default -o jsonpath='{.spec.containers[0].securityContext}{"\n"}'
+kubectl get pod "$POD" -n default -o jsonpath='{.spec.containers[0].resources}{"\n"}'
+```
+
+If the pod is not created, `kubectl get events -n default` shows the validating webhook's reason for denying it.
