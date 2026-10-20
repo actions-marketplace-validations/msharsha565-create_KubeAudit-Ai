@@ -1,4 +1,5 @@
 webhook:
+  mode: service
   url: "https://kubeaudit-ai-production.up.railway.app"
   timeoutSeconds: 2
   failurePolicy: Ignore
