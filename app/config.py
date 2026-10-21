@@ -10,9 +10,9 @@ def _env(name: str, default: str = "") -> str:
 class Settings:
     def __init__(self) -> None:
         # Where the web app lives (sign-in redirects go here) and the public URL of this API.
-        self.app_url = _env("APP_URL", "https://msharsha565-create.github.io/KubeAudit-Ai/")
+        self.app_url = _env("APP_URL", "https://kubeaudit-ai.github.io/")
         self.api_url = _env("API_URL", "https://kubeaudit-ai-production.up.railway.app").rstrip("/")
-        origins = _env("CORS_ORIGINS", "https://msharsha565-create.github.io")
+        origins = _env("CORS_ORIGINS", "https://kubeaudit-ai.github.io")
         self.cors_origins = [o.strip().rstrip("/") for o in origins.split(",") if o.strip()]
 
         self.github_client_id = _env("GITHUB_CLIENT_ID")

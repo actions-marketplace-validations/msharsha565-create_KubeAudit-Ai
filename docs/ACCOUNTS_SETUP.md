@@ -8,7 +8,7 @@ Railway redeploys after you save them.
 
 ## 0. How Railway runs this app
 
-The Railway service runs a published Docker image, `ghcr.io/msharsha565-create/kubeaudit-ai:<version>`.
+The Railway service runs a published Docker image, `ghcr.io/kubeaudit-ai/kubeaudit-ai:<version>`.
 Publishing a GitHub release `vX.Y.Z` builds image `X.Y.Z`. To update the server, set
 **Settings → Source → Image** to the new tag and deploy.
 
@@ -27,7 +27,7 @@ Without a database, accounts are lost every time Railway redeploys.
 
 1. Go to <https://github.com/settings/developers> → **OAuth Apps** → **New OAuth App**.
    - Application name: `KubeAudit AI`
-   - Homepage URL: `https://msharsha565-create.github.io/KubeAudit-Ai/`
+   - Homepage URL: `https://kubeaudit-ai.github.io/`
    - Authorization callback URL: `https://kubeaudit-ai-production.up.railway.app/v1/auth/github/callback`
 2. Copy the **Client ID**, then **Generate a new client secret** and copy it.
 3. Railway variables: `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`.
@@ -83,7 +83,7 @@ Do this in **test mode** first (toggle at the top of the Stripe dashboard), then
 5. **Settings → Billing → Subscriptions and emails**: turn on **Send emails about upcoming renewals** (for yearly plans) and
    **Send emails for failed payments**. The Refund Policy promises a reminder before yearly renewals.
 6. **Settings → Public details**: add your support email and links to
-   `https://msharsha565-create.github.io/KubeAudit-Ai/terms.html`, `privacy.html` and `refund.html`.
+   `https://kubeaudit-ai.github.io/terms.html`, `privacy.html` and `refund.html`.
 7. Railway variables: `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID_PRO` (monthly), `STRIPE_PRICE_ID_PRO_YEARLY`, `STRIPE_WEBHOOK_SECRET`.
 8. Test: sign in on the web app, **Upgrade to Pro**, pay with card `4242 4242 4242 4242`,
    any future date and any CVC. You should come back as Pro within a few seconds.
