@@ -11,7 +11,7 @@ KubeAudit AI scans Kubernetes YAML and Helm charts, points to the exact line of 
 
 ## Web app
 
-**Open it: https://msharsha565-create.github.io/KubeAudit-Ai/**
+**Open it: https://kubeaudit-ai.github.io/**
 
 Paste or drop Kubernetes YAML and get a security score, each problem marked on its line with the fix, and a one-click hardened file. It runs entirely in your browser (nothing is uploaded), works offline, and can be installed on a phone or desktop from the browser menu ("Install app" / "Add to Home Screen").
 
@@ -22,9 +22,9 @@ The web app uses a JavaScript port of the same rule engine. CI checks that both 
 Sign in with GitHub, Google, Microsoft or any email address to get an API key. **Pro ($9/month or $90/year, 14-day money-back
 guarantee)** adds saved scan history, shareable report links,
 custom rule settings and 2,500 API scans a month. Scanning itself always stays in your browser; an account stores
-only what you choose to save. [Terms](https://msharsha565-create.github.io/KubeAudit-Ai/terms.html) ·
-[Privacy](https://msharsha565-create.github.io/KubeAudit-Ai/privacy.html) ·
-[Refunds & cancellation](https://msharsha565-create.github.io/KubeAudit-Ai/refund.html).
+only what you choose to save. [Terms](https://kubeaudit-ai.github.io/terms.html) ·
+[Privacy](https://kubeaudit-ai.github.io/privacy.html) ·
+[Refunds & cancellation](https://kubeaudit-ai.github.io/refund.html).
 Setup for the server: [docs/ACCOUNTS_SETUP.md](docs/ACCOUNTS_SETUP.md).
 
 ## GitHub Action
@@ -45,7 +45,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: msharsha565-create/KubeAudit-Ai@v1.1.2
+      - uses: kubeaudit-ai/KubeAudit-Ai@v1.2.0
         with:
           fail-on: high        # critical | high | medium | low | none
           only-changed: true   # scan just the files this PR touches
@@ -68,7 +68,7 @@ Outputs: `findings`, `critical`, `high`, `sarif-file`, `report-file`.
 ## CLI
 
 ```bash
-pip install "git+https://github.com/msharsha565-create/KubeAudit-Ai"
+pip install "git+https://github.com/kubeaudit-ai/KubeAudit-Ai"
 kubeaudit scan .                       # human-readable, exit 1 on high+ findings
 kubeaudit scan k8s/ --format sarif -o results.sarif
 kubeaudit scan . --fail-on critical --ignore KA014,KA015
@@ -132,7 +132,7 @@ The same project ships a validating and mutating admission webhook for pods.
 ### Install from the Helm repository
 
 ```bash
-helm repo add kubeaudit https://msharsha565-create.github.io/KubeAudit-Ai/
+helm repo add kubeaudit https://kubeaudit-ai.github.io/KubeAudit-Ai/
 helm repo update
 helm upgrade --install kubeaudit kubeaudit/kubeaudit-ai -n kubeaudit --create-namespace
 kubectl rollout status deployment/kubeaudit-kubeaudit-ai -n kubeaudit --timeout=180s

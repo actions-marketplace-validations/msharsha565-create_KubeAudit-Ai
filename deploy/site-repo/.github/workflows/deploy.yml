@@ -1,0 +1,74 @@
+# Publishes https://kubeaudit-ai.github.io/ from the web app in kubeaudit-ai/KubeAudit-Ai.
+# Runs every 30 minutes and on demand; only rebuilds when the code repo has new commits.
+name: Deploy website
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.check.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          repository: kubeaudit-ai/KubeAudit-Ai
+          ref: main
+          path: src
+
+      - name: Anything new to publish?
+        id: check
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          sha=$(git -C src rev-parse HEAD)
+          live=$(curl -fsS https://kubeaudit-ai.github.io/version.txt 2>/dev/null || true)
+          echo "code: $sha  live: ${live:-none}"
+          if [ "$EVENT" = "schedule" ] && [ "$sha" = "$live" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v5
+        if: steps.check.outputs.changed == 'true'
+        with:
+          node-version: "22"
+
+      - name: Build
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          cd src/web
+          npm ci
+          npm run build
+          git -C .. rev-parse HEAD > dist/site/version.txt
+
+      - uses: actions/upload-pages-artifact@v4
+        if: steps.check.outputs.changed == 'true'
+        with:
+          path: src/web/dist/site
+
+  deploy:
+    needs: build
+    if: needs.build.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

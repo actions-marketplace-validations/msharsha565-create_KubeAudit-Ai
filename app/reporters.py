@@ -112,7 +112,7 @@ def to_sarif(result: ScanResult) -> str:
         "runs": [{
             "tool": {"driver": {
                 "name": "KubeAudit AI",
-                "informationUri": "https://github.com/msharsha565-create/KubeAudit-Ai",
+                "informationUri": "https://github.com/kubeaudit-ai/KubeAudit-Ai",
                 "semanticVersion": TOOL_VERSION,
                 "rules": [_sarif_rule(r) for r in rules],
             }},
