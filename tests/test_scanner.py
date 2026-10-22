@@ -218,3 +218,18 @@ def test_explicit_path_excluded_by_config_warns(tmp_path):
     result = scan(["skip/pod.yaml"], tmp_path, cfg)
     assert result.findings == []
     assert any("excluded by the `exclude` setting" in w for w in result.warnings)
+
+
+def test_ka007_flags_passwords_inside_urls():
+    text = (FIXTURE / "k8s" / "url-credentials.yaml").read_text()
+    located, _ = scan_text(text, "url-credentials.yaml", Config())
+    hits = {x.line: x.finding.message for x in located if x.finding.rule.id == "KA007"}
+    assert set(hits) == {12, 14}, hits          # DATABASE_URL and REDIS_URL only
+    assert "embeds a password in the URL in `DATABASE_URL`" in hits[12]
+
+
+def test_ka007_reports_secret_named_env_once_even_with_url_value():
+    obj = {"apiVersion": "v1", "kind": "Pod", "metadata": {"name": "p"},
+           "spec": {"containers": [{"name": "c", "image": "x:1",
+                                    "env": [{"name": "DB_PASSWORD", "value": "postgres://u:p@h/db"}]}]}}
+    assert [f.rule.id for f in check_object(obj)].count("KA007") == 1

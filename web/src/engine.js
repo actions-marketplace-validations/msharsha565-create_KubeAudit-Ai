@@ -14,6 +14,7 @@ export const RULES = DATA.RULES;
 export const SEVERITY_ORDER = DATA.SEVERITY_ORDER;
 const DANGEROUS_CAPS = new Set(DATA.DANGEROUS_CAPS);
 const SECRET_NAME = new RegExp(DATA.SECRET_NAME, "i");
+const URL_CREDENTIALS = new RegExp(DATA.URL_CREDENTIALS, "i");
 const LONG_RUNNING = new Set(DATA.LONG_RUNNING);
 const POD_SPEC_PATHS = DATA.POD_SPEC_PATHS;
 const IGNORE_ANNOTATION = DATA.IGNORE_ANNOTATION;
@@ -161,8 +162,11 @@ function checkPod(obj, kind, resource) {
         if (!isDict(env)) return;
         const val = env.value;
         const envName = Object.prototype.hasOwnProperty.call(env, "name") ? pyStr(env.name) : "";
-        if (typeof val === "string" && val.trim() && SECRET_NAME.test(envName)) {
+        if (typeof val !== "string" || !val.trim()) return;
+        if (SECRET_NAME.test(envName)) {
           F("KA007", `${label} in ${resource} sets \`${pyStr(env.name)}\` to a literal value.`, [...cpath, "env", j, "value"]);
+        } else if (URL_CREDENTIALS.test(val)) {
+          F("KA007", `${label} in ${resource} embeds a password in the URL in \`${pyStr(env.name)}\`.`, [...cpath, "env", j, "value"]);
         }
       });
     });
