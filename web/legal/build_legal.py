@@ -4,7 +4,7 @@ from pathlib import Path
 OWNER = "Sai Harsha Vardhan Mylavarapu"
 EMAIL = "msharsha565@gmail.com"
 EFFECTIVE = "October 20, 2026"
-SITE = "https://msharsha565-create.github.io/KubeAudit-Ai/"
+SITE = "https://kubeaudit-ai.github.io/"
 
 CSS = """
 :root{--bg:#eef1f3;--panel:#fbfcfc;--ink:#12202b;--ink-2:#4a5966;--line:#d5dde2;--accent:#0b6a86}

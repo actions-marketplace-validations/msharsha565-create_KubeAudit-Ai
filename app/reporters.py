@@ -21,6 +21,11 @@ SARIF_LEVEL = {"critical": "error", "high": "error", "medium": "warning", "low":
 SECURITY_SEVERITY = {"critical": "9.5", "high": "7.5", "medium": "5.0", "low": "2.0"}
 
 
+def _n(count: int, noun: str, plural: Optional[str] = None) -> str:
+    """'1 resource', '2 resources'."""
+    return f"{count} {noun if count == 1 else (plural or noun + 's')}"
+
+
 def _loc(x: Located) -> str:
     return f"{x.file}:{x.line}" if not x.rendered_from_helm else f"{x.file} (rendered)"
 
@@ -42,8 +47,9 @@ def to_text(result: ScanResult, color: bool = False) -> str:
     counts = result.counts()
     summary = ", ".join(f"{counts[s]} {s}" for s in ("critical", "high", "medium", "low"))
     lines.append("")
-    lines.append(f"Scanned {result.resources_scanned} resources in {result.files_scanned} files/charts: "
-                 f"{len(result.findings)} findings ({summary}).")
+    lines.append(f"Scanned {_n(result.resources_scanned, 'resource')} in "
+                 f"{_n(result.files_scanned, 'file/chart', 'files/charts')}: "
+                 f"{_n(len(result.findings), 'finding')} ({summary}).")
     return "\n".join(lines)
 
 
@@ -112,7 +118,7 @@ def to_sarif(result: ScanResult) -> str:
         "runs": [{
             "tool": {"driver": {
                 "name": "KubeAudit AI",
-                "informationUri": "https://github.com/msharsha565-create/KubeAudit-Ai",
+                "informationUri": "https://github.com/kubeaudit-ai/KubeAudit-Ai",
                 "semanticVersion": TOOL_VERSION,
                 "rules": [_sarif_rule(r) for r in rules],
             }},
@@ -130,10 +136,10 @@ def to_markdown(result: ScanResult, link_base: Optional[str] = None, fail_on: st
     failed = result.failed(fail_on)
     out = [COMMENT_MARKER, "## 🛡️ KubeAudit AI"]
     if not result.findings:
-        out.append(f"✅ No issues found in {result.resources_scanned} Kubernetes resources.")
+        out.append(f"✅ No issues found in {_n(result.resources_scanned, 'Kubernetes resource')}.")
     else:
         status = "❌ **Blocking issues found**" if failed else "⚠️ Issues found (not blocking)"
-        out.append(f"{status} — {len(result.findings)} findings in {result.resources_scanned} resources.\n")
+        out.append(f"{status} — {_n(len(result.findings), 'finding')} in {_n(result.resources_scanned, 'resource')}.\n")
         out.append("| Severity | Count |\n|---|---:|")
         for s in ("critical", "high", "medium", "low"):
             if counts[s]:

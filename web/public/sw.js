@@ -1,5 +1,5 @@
 // Offline support: cache the app shell and the pinned YAML library.
-const CACHE = "kubeaudit-v2";
+const CACHE = "kubeaudit-v3";
 const SHELL = ["./", "index.html", "manifest.webmanifest", "icon.svg", "icon-192.png", "icon-512.png", "terms.html", "privacy.html", "refund.html"];
 
 self.addEventListener("install", (e) => {
@@ -21,7 +21,8 @@ self.addEventListener("fetch", (e) => {
     })));
     return;
   }
-  if (url.origin === location.origin) {
+  // Only the site's own top-level files; other paths on this domain (e.g. /KubeAudit-Ai/ for the Helm repo) pass through.
+  if (url.origin === location.origin && !url.pathname.slice(1).includes("/")) {
     // App files: network first so updates show up, cache when offline.
     e.respondWith(fetch(e.request).then((res) => {
       if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(e.request, copy)); }

@@ -435,8 +435,8 @@ def test_unpaid_checkout_does_not_grant_pro(stripe_on):
 # ---------------------------------------------------------------- CORS
 
 def test_cors_allows_only_the_web_app():
-    ok = client.options("/v1/me", headers={"Origin": "https://msharsha565-create.github.io", "Access-Control-Request-Method": "GET",
+    ok = client.options("/v1/me", headers={"Origin": "https://kubeaudit-ai.github.io", "Access-Control-Request-Method": "GET",
                                            "Access-Control-Request-Headers": "authorization"})
-    assert ok.headers.get("access-control-allow-origin") == "https://msharsha565-create.github.io"
+    assert ok.headers.get("access-control-allow-origin") == "https://kubeaudit-ai.github.io"
     bad = client.options("/v1/me", headers={"Origin": "https://evil.example", "Access-Control-Request-Method": "GET"})
     assert "access-control-allow-origin" not in bad.headers
