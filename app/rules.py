@@ -122,6 +122,9 @@ RULES: Dict[str, Rule] = {r.id: r for r in [
 
 DANGEROUS_CAPS = {"ALL", "SYS_ADMIN", "NET_ADMIN", "SYS_PTRACE", "SYS_MODULE", "SYS_RAWIO", "BPF", "PERFMON", "DAC_READ_SEARCH"}
 SECRET_NAME = re.compile(r"(PASSW(OR)?D|SECRET|TOKEN|API_?KEY|PRIVATE_?KEY|ACCESS_?KEY|CREDENTIAL)", re.I)
+# A URL with a password in its userinfo: postgres://user:pass@host. A password that is a
+# Kubernetes variable reference such as $(DB_PASSWORD) is the safe pattern and is not matched.
+URL_CREDENTIALS = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://[^\s/@:]*:(?!\$\(|\$\{)[^\s/@]+@", re.I)
 LONG_RUNNING = {"Deployment", "StatefulSet", "DaemonSet", "ReplicaSet", "ReplicationController"}
 
 # kind -> path from object root to the pod spec
@@ -242,8 +245,13 @@ def _check_pod(obj: Dict[str, Any], kind: str, resource: str) -> List[Finding]:
             if not isinstance(env, dict):
                 continue
             val = env.get("value")
-            if isinstance(val, str) and val.strip() and SECRET_NAME.search(str(env.get("name", ""))):
+            if not isinstance(val, str) or not val.strip():
+                continue
+            if SECRET_NAME.search(str(env.get("name", ""))):
                 F("KA007", f"{label} in {resource} sets `{env.get('name')}` to a literal value.",
+                  cpath + ("env", j, "value"))
+            elif URL_CREDENTIALS.search(val):
+                F("KA007", f"{label} in {resource} embeds a password in the URL in `{env.get('name')}`.",
                   cpath + ("env", j, "value"))
     return out
 

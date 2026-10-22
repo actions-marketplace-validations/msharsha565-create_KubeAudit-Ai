@@ -114,7 +114,7 @@ Drop it into GitLab CI, Jenkins, a pre-commit hook, or anywhere else Python runs
 | KA004 | 🟠 High | HostNamespaces | Pod shares host namespaces |
 | KA005 | 🟠 High | HostPathVolume | Pod mounts a hostPath volume |
 | KA006 | 🟠 High | DangerousCapabilities | Container adds dangerous Linux capabilities |
-| KA007 | 🟠 High | HardcodedSecretEnv | Secret value hard-coded in an environment variable |
+| KA007 | 🟠 High | HardcodedSecretEnv | Secret value hard-coded in an environment variable, including passwords inside URLs like `DATABASE_URL` |
 | KA008 | 🟠 High | RBACWildcard | RBAC rule grants wildcard access |
 | KA009 | 🟡 Medium | ImageNotPinned | Image uses latest or no tag |
 | KA010 | 🟡 Medium | ReadOnlyRootFilesystem | Root filesystem is writable |

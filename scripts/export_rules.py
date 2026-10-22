@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.rules import RULES, SEVERITY_ORDER, DANGEROUS_CAPS, SECRET_NAME, LONG_RUNNING, POD_SPEC_PATHS, IGNORE_ANNOTATION
+from app.rules import RULES, SEVERITY_ORDER, DANGEROUS_CAPS, SECRET_NAME, URL_CREDENTIALS, LONG_RUNNING, POD_SPEC_PATHS, IGNORE_ANNOTATION
 
 data = {
     "RULES": {r.id: {"id": r.id, "name": r.name, "severity": r.severity, "title": r.title,
@@ -13,6 +13,7 @@ data = {
     "SEVERITY_ORDER": SEVERITY_ORDER,
     "DANGEROUS_CAPS": sorted(DANGEROUS_CAPS),
     "SECRET_NAME": SECRET_NAME.pattern,
+    "URL_CREDENTIALS": URL_CREDENTIALS.pattern,
     "LONG_RUNNING": sorted(LONG_RUNNING),
     "POD_SPEC_PATHS": {k: list(v) for k, v in POD_SPEC_PATHS.items()},
     "IGNORE_ANNOTATION": IGNORE_ANNOTATION,
