@@ -155,6 +155,7 @@ export const DATA = {
     "SYS_RAWIO"
   ],
   "SECRET_NAME": "(PASSW(OR)?D|SECRET|TOKEN|API_?KEY|PRIVATE_?KEY|ACCESS_?KEY|CREDENTIAL)",
+  "URL_CREDENTIALS": "[A-Za-z][A-Za-z0-9+.-]*://[^\\s/@:]*:(?!\\$\\(|\\$\\{)[^\\s/@]+@",
   "LONG_RUNNING": [
     "DaemonSet",
     "Deployment",
