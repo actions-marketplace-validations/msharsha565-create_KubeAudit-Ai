@@ -41,7 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: kubeaudit-ai/KubeAudit-Ai@v1.2.0
+      - uses: kubeaudit-ai/KubeAudit-Ai@v1.2.1
         with:
           fail-on: high        # critical | high | medium | low | none
           only-changed: true   # scan just the files this PR touches
